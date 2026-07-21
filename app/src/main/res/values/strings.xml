@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Call Handler</string>
+    <string name="notification_listener_label">Call Handler caller-ID listener</string>
+
+    <string name="channel_service_name">Call announcements</string>
+    <string name="channel_service_desc">Ongoing notification while announcing an incoming call</string>
+    <string name="notif_announcing_title">Announcing incoming call</string>
+    <string name="notif_announcing_text">Listening for voice commands…</string>
+
+    <string name="unknown_caller">Unknown caller</string>
+    <string name="announce_incoming_call">Incoming call from %1$s</string>
+    <string name="announce_whatsapp_voice">WhatsApp voice call from %1$s</string>
+    <string name="announce_whatsapp_video">WhatsApp video call from %1$s</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="pref_cat_announcements">Announcements</string>
+    <string name="pref_bluetooth_title">Announce on Bluetooth</string>
+    <string name="pref_bluetooth_summary">Announce callers through connected Bluetooth earphones</string>
+    <string name="pref_speaker_title">Announce on loudspeaker</string>
+    <string name="pref_speaker_summary">Use the phone speaker when Bluetooth is unavailable</string>
+    <string name="pref_whatsapp_title">Announce WhatsApp calls</string>
+    <string name="pref_whatsapp_summary">Announce WhatsApp voice and video calls (voice commands not supported)</string>
+    <string name="pref_repeat_title">Repeat announcements</string>
+    <string name="pref_repeat_summary">Keep announcing while the phone is ringing</string>
+    <string name="pref_repeat_interval_title">Repeat interval</string>
+    <string name="pref_max_repeats_title">Maximum repeats</string>
+    <string name="pref_cat_voice">Voice commands</string>
+    <string name="pref_voice_commands_title">Enable voice commands</string>
+    <string name="pref_voice_commands_summary">Answer, Reject, Silent, Speaker, Volume Up, Volume Down</string>
+    <string name="pref_cat_audio">Audio</string>
+    <string name="pref_speech_rate_title">Speech rate</string>
+    <string name="pref_duck_level_title">Ringtone ducking level</string>
+    <string name="pref_duck_level_summary">How much to lower the ringtone while speaking</string>
+
+    <string name="perm_rationale">Call Handler needs phone, contacts, and microphone access to announce callers and hear voice commands. Notification access is required for Truecaller and WhatsApp call detection.</string>
+    <string name="btn_grant_permissions">Grant permissions</string>
+    <string name="btn_notification_access">Open notification access</string>
+    <string name="btn_overlay_permission">Allow display over other apps (required for voice commands)</string>
+</resources>
