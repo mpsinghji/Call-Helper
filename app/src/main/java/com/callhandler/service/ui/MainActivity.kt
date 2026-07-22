@@ -114,6 +114,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             try {
+                // Note: reduceRingtoneForAnnouncement() won't affect anything here
+                // since there's no active call/ringtone during testing
                 router.setAnnouncementVolume(settings.announcementVolumePct)
                 tts.announce(getString(R.string.test_bt_announcement_text))
             } finally {

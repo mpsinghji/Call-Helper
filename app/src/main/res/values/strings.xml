@@ -18,11 +18,11 @@
     <string name="pref_voice_commands_summary">Answer, Reject, Silent, Speaker</string>
     <string name="pref_cat_announcement">Bluetooth announcement</string>
     <string name="pref_announcement_title">Announce caller ID</string>
-    <string name="pref_announcement_summary">Announce through Bluetooth earphones only (never speaker)</string>
+    <string name="pref_announcement_summary">Announce through Bluetooth earphones at maximum volume</string>
     <string name="pref_cat_audio">Audio</string>
     <string name="pref_speech_rate_title">Speech rate</string>
     <string name="pref_announcement_volume_title">Announcement volume</string>
-    <string name="pref_announcement_volume_summary">Volume level for BT announcements (% of max)</string>
+    <string name="pref_announcement_volume_summary">Note: Announcements always play at maximum volume (200%)</string>
 
     <!-- Permissions -->
     <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.\n\nNotification access is needed for Truecaller caller-ID announcements through Bluetooth earphones.</string>

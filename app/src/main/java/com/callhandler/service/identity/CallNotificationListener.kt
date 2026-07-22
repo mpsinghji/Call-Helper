@@ -13,10 +13,19 @@ import com.callhandler.service.core.CallHandlerService
  *
  * Non-call Truecaller notifications (profile views, promotions, etc.)
  * are filtered out.
+ * 
+ * **VoIP/Messaging app calls are ignored** - WhatsApp, Telegram, Discord,
+ * Skype, etc. calls are not announced. Only cellular phone calls are announced.
  */
 class CallNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Explicitly block VoIP/messaging apps - we only want cellular calls
+        if (sbn.packageName in BLOCKED_VOIP_PACKAGES) {
+            Log.d(TAG, "Ignoring VoIP/messaging app: ${sbn.packageName}")
+            return
+        }
+        
         if (sbn.packageName !in TRUECALLER_PACKAGES) return
         handleTruecaller(sbn)
     }
@@ -75,6 +84,32 @@ class CallNotificationListener : NotificationListenerService() {
         private const val TAG = "CallNotifListener"
 
         private val TRUECALLER_PACKAGES = setOf("com.truecaller")
+
+        /**
+         * VoIP and messaging apps to explicitly block.
+         * We only want cellular phone calls, not app-based calls.
+         */
+        private val BLOCKED_VOIP_PACKAGES = setOf(
+            "com.whatsapp",              // WhatsApp
+            "com.whatsapp.w4b",          // WhatsApp Business
+            "org.telegram.messenger",    // Telegram
+            "com.telegram.messenger.web", // Telegram Web
+            "com.skype.raider",          // Skype
+            "com.discord",               // Discord
+            "us.zoom.videomeetings",     // Zoom
+            "com.microsoft.teams",       // Microsoft Teams
+            "com.google.android.apps.tachyon", // Google Duo/Meet
+            "com.facebook.orca",         // Facebook Messenger
+            "com.viber.voip",            // Viber
+            "jp.naver.line.android",     // LINE
+            "com.imo.android.imoim",     // imo
+            "com.snapchat.android",      // Snapchat
+            "kik.android",               // Kik
+            "com.instagram.android",     // Instagram
+            "com.twitter.android",       // Twitter/X
+            "com.google.android.apps.googlevoice", // Google Voice
+            "com.rebtel.client"          // Rebtel
+        )
 
         private val INCOMING_CALL_HINTS = listOf(
             "incoming call", "identified call", "calling", "is calling",

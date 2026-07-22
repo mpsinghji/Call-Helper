@@ -40,6 +40,8 @@ class AudioRouter(private val context: Context) {
 
     private var scoConnected = false
     private var savedVoiceCallVolume = -1
+    private var savedAudioMode = -1
+    private var savedRingVolume = -1
 
     fun isBluetoothAudioConnected(): Boolean {
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -82,12 +84,31 @@ class AudioRouter(private val context: Context) {
 
     suspend fun connectBluetoothAudio(): Boolean {
         if (scoConnected) return true
+        
+        // Save current audio mode
+        if (savedAudioMode < 0) {
+            savedAudioMode = audioManager.mode
+            Log.d(TAG, "Saved audio mode: $savedAudioMode")
+        }
+        
+        // Try MODE_IN_CALL first (standard call mode that routes to BT)
+        // This should allow both ringtone on speaker and TTS on BT
+        audioManager.mode = AudioManager.MODE_IN_CALL
+        Log.d(TAG, "Set audio mode to MODE_IN_CALL for BT announcement")
+        
         val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             connectViaCommunicationDevice()
         } else {
             connectViaLegacySco()
         }
         scoConnected = ok
+        
+        if (!ok && savedAudioMode >= 0) {
+            // Failed to connect, restore audio mode
+            audioManager.mode = savedAudioMode
+            savedAudioMode = -1
+        }
+        
         return ok
     }
 
@@ -146,27 +167,82 @@ class AudioRouter(private val context: Context) {
                 audioManager.isBluetoothScoOn = false
             }
         }
+        
+        // Restore original audio mode
+        if (savedAudioMode >= 0) {
+            Log.d(TAG, "Restoring audio mode to: $savedAudioMode")
+            audioManager.mode = savedAudioMode
+            savedAudioMode = -1
+        }
     }
 
     // ------------------------------------------ BT earphone volume for announcement
 
     /**
-     * Set VOICE_CALL stream to a specific percentage of max for the
-     * announcement volume. Saves the current volume for later restoration.
+     * Temporarily reduce ringtone volume during announcement so the caller ID is audible.
+     * Reduces STREAM_RING to 30% of current volume.
+     * Call restoreRingtoneVolume() after announcement to restore.
+     */
+    fun reduceRingtoneForAnnouncement() {
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_RING)
+        if (savedRingVolume < 0 && current > 0) {
+            savedRingVolume = current
+            val reduced = (current * 0.3f).roundToInt().coerceAtLeast(1)
+            Log.d(TAG, "Reducing RING volume temporarily: $current -> $reduced (30%) for announcement")
+            setStreamSafely(AudioManager.STREAM_RING, reduced)
+        }
+    }
+
+    /**
+     * Restore ringtone volume after announcement.
+     */
+    fun restoreRingtoneVolume() {
+        if (savedRingVolume >= 0) {
+            Log.d(TAG, "Restoring RING volume to $savedRingVolume")
+            setStreamSafely(AudioManager.STREAM_RING, savedRingVolume)
+            savedRingVolume = -1
+        }
+    }
+
+    /**
+     * Set VOICE_CALL stream to maximum volume for announcements.
+     * Saves the current volume for later restoration.
+     * 
+     * This OVERRIDES the user's configured percentage and always uses 200% (max volume).
+     * This ensures announcements are always loud and clearly audible in Bluetooth earphones.
+     * 
      * This only affects the BT earphone audio (SCO channel).
-     * STREAM_RING (speaker ringtone) is NEVER touched.
      */
     fun setAnnouncementVolume(volumePct: Int) {
+        // Save VOICE_CALL volume
         val current = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
         if (savedVoiceCallVolume < 0) {
             savedVoiceCallVolume = current
             Log.d(TAG, "Saved current VOICE_CALL volume: $current")
         }
         
+        // Log RING volume to verify it's not being changed
+        val ringVolume = audioManager.getStreamVolume(AudioManager.STREAM_RING)
+        val ringMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING)
+        Log.d(TAG, "RING volume: $ringVolume / $ringMax (speaker ringtone)")
+        
         val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-        val target = (max * volumePct / 100f).roundToInt().coerceIn(1, max)
-        Log.d(TAG, "Setting announcement volume: $target / $max (${volumePct}%) [original: $current]")
+        
+        // OVERRIDE: Always use maximum volume (200% = max) for announcements
+        val target = max
+        
+        Log.d(TAG, "Setting announcement volume: $target / $max (MAXIMUM - 200% override) [original: $current]")
+        Log.d(TAG, "User requested $volumePct% but forcing to 200% (max) for clarity")
+        
         setStreamSafely(AudioManager.STREAM_VOICE_CALL, target)
+        
+        // Verify the volume was set
+        val actualSet = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
+        if (actualSet != target) {
+            Log.w(TAG, "Volume mismatch! Requested $target but got $actualSet")
+        } else {
+            Log.d(TAG, "✓ Volume set successfully to MAXIMUM ($actualSet)")
+        }
     }
 
     /**
@@ -199,6 +275,7 @@ class AudioRouter(private val context: Context) {
     /** Restore every audio setting we touched. Safe to call repeatedly. */
     fun restoreAll() {
         restoreBluetoothVolume()
+        restoreRingtoneVolume()
         disconnectBluetoothAudio()
     }
 

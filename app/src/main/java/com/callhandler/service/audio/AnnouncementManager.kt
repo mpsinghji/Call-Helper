@@ -32,6 +32,7 @@ class AnnouncementManager(
     private val scoAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
         .build()
 
     private lateinit var tts: TextToSpeech
