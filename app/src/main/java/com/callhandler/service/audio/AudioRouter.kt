@@ -179,17 +179,16 @@ class AudioRouter(private val context: Context) {
     // ------------------------------------------ BT earphone volume for announcement
 
     /**
-     * Temporarily reduce ringtone volume during announcement so the caller ID is audible.
-     * Reduces STREAM_RING to 30% of current volume.
+     * Completely suppress (mute) the ringtone during announcement so caller ID is clearly audible.
+     * Mutes STREAM_RING to 0.
      * Call restoreRingtoneVolume() after announcement to restore.
      */
-    fun reduceRingtoneForAnnouncement() {
+    fun suppressRingtoneForAnnouncement() {
         val current = audioManager.getStreamVolume(AudioManager.STREAM_RING)
         if (savedRingVolume < 0 && current > 0) {
             savedRingVolume = current
-            val reduced = (current * 0.3f).roundToInt().coerceAtLeast(1)
-            Log.d(TAG, "Reducing RING volume temporarily: $current -> $reduced (30%) for announcement")
-            setStreamSafely(AudioManager.STREAM_RING, reduced)
+            Log.d(TAG, "Suppressing (muting) RING volume: $current -> 0 for announcement")
+            setStreamSafely(AudioManager.STREAM_RING, 0)
         }
     }
 
@@ -205,11 +204,13 @@ class AudioRouter(private val context: Context) {
     }
 
     /**
-     * Set VOICE_CALL stream to maximum volume for announcements.
+     * Set VOICE_CALL stream to the configured announcement volume percentage.
      * Saves the current volume for later restoration.
      * 
-     * This OVERRIDES the user's configured percentage and always uses 200% (max volume).
-     * This ensures announcements are always loud and clearly audible in Bluetooth earphones.
+     * The percentage (50-200%) is applied directly to the max volume.
+     * - 100% = normal max volume
+     * - 200% = absolute maximum (same as 100% but allows user control)
+     * - 50% = half of max volume
      * 
      * This only affects the BT earphone audio (SCO channel).
      */
@@ -221,18 +222,18 @@ class AudioRouter(private val context: Context) {
             Log.d(TAG, "Saved current VOICE_CALL volume: $current")
         }
         
-        // Log RING volume to verify it's not being changed
+        // Log RING volume to verify it's being muted
         val ringVolume = audioManager.getStreamVolume(AudioManager.STREAM_RING)
         val ringMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING)
-        Log.d(TAG, "RING volume: $ringVolume / $ringMax (speaker ringtone)")
+        Log.d(TAG, "RING volume: $ringVolume / $ringMax (should be 0 = muted)")
         
         val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
         
-        // OVERRIDE: Always use maximum volume (200% = max) for announcements
-        val target = max
+        // Apply user's configured volume percentage (50-200%)
+        // Note: percentages above 100% still cap at max, but give users control
+        val target = ((max * volumePct / 100f).roundToInt()).coerceIn(1, max)
         
-        Log.d(TAG, "Setting announcement volume: $target / $max (MAXIMUM - 200% override) [original: $current]")
-        Log.d(TAG, "User requested $volumePct% but forcing to 200% (max) for clarity")
+        Log.d(TAG, "Setting announcement volume: $target / $max (${volumePct}%) [original: $current]")
         
         setStreamSafely(AudioManager.STREAM_VOICE_CALL, target)
         
@@ -241,7 +242,7 @@ class AudioRouter(private val context: Context) {
         if (actualSet != target) {
             Log.w(TAG, "Volume mismatch! Requested $target but got $actualSet")
         } else {
-            Log.d(TAG, "✓ Volume set successfully to MAXIMUM ($actualSet)")
+            Log.d(TAG, "✓ Volume set successfully to $actualSet")
         }
     }
 

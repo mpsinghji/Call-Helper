@@ -24,9 +24,9 @@ class SettingsManager(context: Context) {
     val speechRatePct: Int
         get() = prefs.getInt(KEY_SPEECH_RATE, 100).coerceIn(50, 200)
 
-    /** Announcement volume percent of the VOICE_CALL stream max (20..100). */
+    /** Announcement volume percent of the VOICE_CALL stream max (50..200). */
     val announcementVolumePct: Int
-        get() = prefs.getInt(KEY_ANNOUNCEMENT_VOLUME, 70).coerceIn(20, 100)
+        get() = prefs.getInt(KEY_ANNOUNCEMENT_VOLUME, 200).coerceIn(50, 200)
 
     companion object {
         const val KEY_VOICE_COMMANDS = "pref_voice_commands_enabled"

@@ -33,14 +33,14 @@
             app:min="50"
             app:showSeekBarValue="true" />
 
-        <!-- Announcement volume: 20..100 percent of VOICE_CALL max -->
+        <!-- Announcement volume: 50..200 percent of VOICE_CALL max -->
         <SeekBarPreference
             android:key="pref_announcement_volume_pct"
             android:title="@string/pref_announcement_volume_title"
             android:summary="@string/pref_announcement_volume_summary"
-            android:defaultValue="70"
-            android:max="100"
-            app:min="20"
+            android:defaultValue="200"
+            android:max="200"
+            app:min="50"
             app:showSeekBarValue="true" />
 
     </PreferenceCategory>

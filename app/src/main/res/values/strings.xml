@@ -22,7 +22,7 @@
     <string name="pref_cat_audio">Audio</string>
     <string name="pref_speech_rate_title">Speech rate</string>
     <string name="pref_announcement_volume_title">Announcement volume</string>
-    <string name="pref_announcement_volume_summary">Note: Announcements always play at maximum volume (200%)</string>
+    <string name="pref_announcement_volume_summary">Bluetooth earphone volume (50–200%, ringtone muted during announcement)</string>
 
     <!-- Permissions -->
     <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.\n\nNotification access is needed for Truecaller caller-ID announcements through Bluetooth earphones.</string>

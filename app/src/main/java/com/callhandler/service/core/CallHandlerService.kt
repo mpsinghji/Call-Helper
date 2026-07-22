@@ -164,14 +164,14 @@ class CallHandlerService : Service() {
      * Steps:
      * 1. Pause voice commands (so TTS doesn't trigger recognition)
      * 2. Connect SCO and set audio mode to MODE_IN_CALL for proper BT routing
-     * 3. Temporarily reduce ringtone volume to 30% so announcement is clearly audible
-     * 4. Set BT earphone volume to user's configured announcement volume
+     * 3. **Completely mute the ringtone** so announcement is clearly audible
+     * 4. Set BT earphone volume to user's configured announcement volume (50-200%)
      * 5. Speak via TTS through SCO
      * 6. Restore both BT and ringtone volumes to original levels
      * 7. Resume voice commands
      *
-     * The ringtone continues playing (at reduced volume) during the announcement,
-     * then returns to full volume after the announcement completes.
+     * The ringtone is **completely muted (0 volume)** during the announcement,
+     * then restored to full volume after the announcement completes.
      */
     private suspend fun announceViaBluetooth(identity: CallerIdentity) {
         if (!stateMachine.isRinging) return
@@ -184,13 +184,13 @@ class CallHandlerService : Service() {
 
         val name = identity.displayName ?: getString(R.string.unknown_caller)
         val text = getString(R.string.announce_incoming_call, name)
-        Log.i(TAG, "Announcing via Bluetooth: '$name' at MAXIMUM volume (200% override)")
-        Log.i(TAG, "Ringtone will be reduced to 30% during announcement, then restored")
+        Log.i(TAG, "Announcing via Bluetooth: '$name' at ${settings.announcementVolumePct}% volume")
+        Log.i(TAG, "Ringtone will be MUTED (0%) during announcement, then restored")
 
         voiceCommands.pause()
         try {
-            // Reduce ringtone temporarily so announcement is clearly audible
-            audioRouter.reduceRingtoneForAnnouncement()
+            // Completely mute ringtone so announcement is clearly audible
+            audioRouter.suppressRingtoneForAnnouncement()
             audioRouter.setAnnouncementVolume(settings.announcementVolumePct)
             announcer.announce(text)
         } finally {
