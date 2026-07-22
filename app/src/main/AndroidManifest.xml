@@ -2,22 +2,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Call state detection -->
+    <!-- Call state and identity -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- ANSWER_PHONE_CALLS: API 26+, used for voice-command answer -->
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <!-- Prerequisite for FOREGROUND_SERVICE_TYPE_PHONE_CALL on API 34+ -->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
 
-    <!-- Overlay during ringing: grants the while-in-use exemption
-         Android 14 requires for background-started mic FGS, and
-         shows the status overlay with mic icon to the user -->
+    <!-- Overlay: Android 14 mic exemption + visible status overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Voice commands (SpeechRecognizer) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Audio routing (speakerphone, ringer silence) -->
+    <!-- Audio routing (speakerphone, volume, ringer silence) -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- Bluetooth: legacy (<= API 30) and new (API 31+) permission models -->
@@ -55,11 +55,22 @@
             </intent-filter>
         </activity>
 
-        <!-- Voice command listener foreground service -->
+        <!-- Voice command listener + BT announcement foreground service -->
         <service
             android:name=".core.CallHandlerService"
             android:exported="false"
             android:foregroundServiceType="phoneCall|microphone" />
+
+        <!-- Truecaller caller-ID notification listener -->
+        <service
+            android:name=".identity.CallNotificationListener"
+            android:exported="true"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Detects incoming / answered / ended cellular calls -->
         <receiver

@@ -18,13 +18,15 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
+import kotlin.math.roundToInt
 
 /**
  * Bluetooth SCO management and call-audio helpers.
  *
- * Now simplified: no TTS announcement ducking. Only handles
- * SCO for microphone routing (voice commands via Bluetooth),
- * ringer silencing, and speakerphone toggling.
+ * Handles:
+ * - SCO connection for mic (voice commands) and TTS (announcements)
+ * - BT earphone volume ducking during announcements (speaker untouched)
+ * - Ringer silencing and speakerphone toggling via voice commands
  */
 class AudioRouter(private val context: Context) {
 
@@ -37,6 +39,7 @@ class AudioRouter(private val context: Context) {
     }
 
     private var scoConnected = false
+    private var savedVoiceCallVolume = -1
 
     fun isBluetoothAudioConnected(): Boolean {
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -77,11 +80,6 @@ class AudioRouter(private val context: Context) {
 
     // ------------------------------------------------------------ SCO channel
 
-    /**
-     * Open the Bluetooth phone-call audio channel so the mic for
-     * voice commands goes through the earphones. Suspends until connected
-     * or [SCO_TIMEOUT_MS] passes.
-     */
     suspend fun connectBluetoothAudio(): Boolean {
         if (scoConnected) return true
         val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -150,14 +148,44 @@ class AudioRouter(private val context: Context) {
         }
     }
 
+    // ------------------------------------------ BT earphone volume for announcement
+
+    /**
+     * Set VOICE_CALL stream to a specific percentage of max for the
+     * announcement volume. Saves the current volume for later restoration.
+     * This only affects the BT earphone audio (SCO channel).
+     * STREAM_RING (speaker ringtone) is NEVER touched.
+     */
+    fun setAnnouncementVolume(volumePct: Int) {
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
+        if (savedVoiceCallVolume < 0) {
+            savedVoiceCallVolume = current
+            Log.d(TAG, "Saved current VOICE_CALL volume: $current")
+        }
+        
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+        val target = (max * volumePct / 100f).roundToInt().coerceIn(1, max)
+        Log.d(TAG, "Setting announcement volume: $target / $max (${volumePct}%) [original: $current]")
+        setStreamSafely(AudioManager.STREAM_VOICE_CALL, target)
+    }
+
+    /**
+     * Restore the VOICE_CALL volume to its level before ducking.
+     */
+    fun restoreBluetoothVolume() {
+        if (savedVoiceCallVolume >= 0) {
+            Log.d(TAG, "Restoring VOICE_CALL volume to $savedVoiceCallVolume")
+            setStreamSafely(AudioManager.STREAM_VOICE_CALL, savedVoiceCallVolume)
+            savedVoiceCallVolume = -1
+        }
+    }
+
     // -------------------------------------------------------- voice actions
 
     /** Silence the ringer — same as pressing the power button during a ring. */
     fun silenceRinger() {
         runCatching {
-            audioManager.setStreamVolume(
-                AudioManager.STREAM_RING, 0, 0
-            )
+            audioManager.setStreamVolume(AudioManager.STREAM_RING, 0, 0)
         }
     }
 
@@ -170,7 +198,14 @@ class AudioRouter(private val context: Context) {
 
     /** Restore every audio setting we touched. Safe to call repeatedly. */
     fun restoreAll() {
+        restoreBluetoothVolume()
         disconnectBluetoothAudio()
+    }
+
+    private fun setStreamSafely(stream: Int, volume: Int) {
+        runCatching {
+            audioManager.setStreamVolume(stream, volume, 0)
+        }
     }
 
     companion object {

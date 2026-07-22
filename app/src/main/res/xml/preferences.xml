@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory android:title="@string/pref_cat_voice">
 
@@ -8,6 +9,39 @@
             android:title="@string/pref_voice_commands_title"
             android:summary="@string/pref_voice_commands_summary"
             android:defaultValue="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_announcement">
+
+        <SwitchPreferenceCompat
+            android:key="pref_announcement_enabled"
+            android:title="@string/pref_announcement_title"
+            android:summary="@string/pref_announcement_summary"
+            android:defaultValue="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/pref_cat_audio">
+
+        <!-- TTS speech rate: 50..200 mapped to 0.5x..2.0x -->
+        <SeekBarPreference
+            android:key="pref_speech_rate_pct"
+            android:title="@string/pref_speech_rate_title"
+            android:defaultValue="100"
+            android:max="200"
+            app:min="50"
+            app:showSeekBarValue="true" />
+
+        <!-- Announcement volume: 20..100 percent of VOICE_CALL max -->
+        <SeekBarPreference
+            android:key="pref_announcement_volume_pct"
+            android:title="@string/pref_announcement_volume_title"
+            android:summary="@string/pref_announcement_volume_summary"
+            android:defaultValue="70"
+            android:max="100"
+            app:min="20"
+            app:showSeekBarValue="true" />
 
     </PreferenceCategory>
 

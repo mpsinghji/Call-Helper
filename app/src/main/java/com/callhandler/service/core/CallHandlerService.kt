@@ -19,7 +19,9 @@ import android.widget.ImageView
 import androidx.core.app.NotificationCompat
 import com.callhandler.service.App
 import com.callhandler.service.R
+import com.callhandler.service.audio.AnnouncementManager
 import com.callhandler.service.audio.AudioRouter
+import com.callhandler.service.identity.CallerIdentityManager
 import com.callhandler.service.settings.SettingsManager
 import com.callhandler.service.ui.MainActivity
 import com.callhandler.service.voice.VoiceCommand
@@ -31,14 +33,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
 /**
  * Foreground orchestrator for one incoming-call session.
  *
- * Listens for voice commands (answer, reject, speaker, silent) during
- * incoming cellular calls. Shows a small floating overlay with a mic
- * icon indicating the recognizer state.
+ * - Listens for voice commands (answer, reject, speaker, silent)
+ * - Announces caller ID through Bluetooth earphones only (never speaker)
+ * - Shows a draggable floating overlay with mic-state icon
  */
 class CallHandlerService : Service() {
 
@@ -47,7 +50,9 @@ class CallHandlerService : Service() {
     private lateinit var settings: SettingsManager
     private lateinit var stateMachine: CallStateMachine
     private lateinit var audioRouter: AudioRouter
+    private lateinit var announcer: AnnouncementManager
     private lateinit var voiceCommands: VoiceCommandManager
+    private lateinit var identityManager: CallerIdentityManager
     private lateinit var telecom: TelecomHelper
 
     private var sessionJob: Job? = null
@@ -55,6 +60,7 @@ class CallHandlerService : Service() {
     private var micIconView: ImageView? = null
     private var overlayStateJob: Job? = null
     private var speakerRequested = false
+    private var currentIdentity: CallerIdentity = CallerIdentity.unknown(null)
 
     override fun onCreate() {
         super.onCreate()
@@ -63,18 +69,16 @@ class CallHandlerService : Service() {
             Log.d(TAG, "State: $from -> $to")
         }
         audioRouter = AudioRouter(this)
+        announcer = AnnouncementManager(this, settings)
         telecom = TelecomHelper(this)
+        identityManager = CallerIdentityManager(this)
         voiceCommands = VoiceCommandManager(
             context = this,
             settings = settings,
             onCommand = { command, _ -> onVoiceCommand(command) },
             onUnrecognizedPhrases = { phrases ->
-                if (phrases.isEmpty()) {
-                    Log.d(TAG, "Recognizer returned NO phrases")
-                } else {
-                    phrases.forEachIndexed { index, phrase ->
-                        Log.d(TAG, "Unrecognized[$index] = '$phrase'")
-                    }
+                if (phrases.isNotEmpty()) {
+                    phrases.forEachIndexed { i, p -> Log.d(TAG, "Unrecognized[$i] = '$p'") }
                 }
             }
         )
@@ -85,12 +89,16 @@ class CallHandlerService : Service() {
             ACTION_RINGING -> {
                 startForegroundCompat()
                 showStatusOverlay()
-                onRinging()
+                onRinging(intent.getStringExtra(EXTRA_NUMBER))
             }
 
             ACTION_ANSWERED -> onCallAnswered()
-
             ACTION_ENDED -> onCallEnded()
+
+            ACTION_TRUECALLER_UPDATE -> {
+                val name = intent.getStringExtra(EXTRA_CALLER_NAME)
+                if (name != null) identityManager.onTruecallerName(name)
+            }
         }
         return START_NOT_STICKY
     }
@@ -99,27 +107,91 @@ class CallHandlerService : Service() {
 
     // ---------------------------------------------------------------- ringing
 
-    private fun onRinging() {
-        if (stateMachine.isRinging) return
+    private fun onRinging(number: String?) {
+        if (stateMachine.isRinging) {
+            // Duplicate RINGING broadcast — forward the number if available.
+            if (number != null) {
+                scope.launch(Dispatchers.IO) {
+                    identityManager.onNumberAvailable(number)
+                }
+            }
+            return
+        }
         if (!stateMachine.transitionTo(CallState.RINGING)) return
 
+        // Start voice commands
         if (settings.voiceCommandsEnabled) {
             Log.d(TAG, "Voice commands: STARTING")
             voiceCommands.startContinuous()
-
-            // If Bluetooth is connected, establish SCO so mic routes through earphones
-            if (audioRouter.isBluetoothAudioConnected()) {
-                sessionJob = scope.launch {
-                    val scoOk = audioRouter.connectBluetoothAudio()
-                    Log.d(TAG, "Bluetooth SCO for mic: $scoOk")
-                }
-            }
         }
 
-        // Observe listener state to update overlay icon
+        // Observe listener state for overlay icon
         overlayStateJob = scope.launch {
-            voiceCommands.listenerState.collect { state ->
-                updateOverlayMicIcon(state)
+            voiceCommands.listenerState.collect { updateOverlayMicIcon(it) }
+        }
+
+        // Session: identity resolution + BT announcement
+        sessionJob = scope.launch {
+            // Subscribe to identity updates
+            launch {
+                identityManager.identity.filterNotNull().collect { updated ->
+                    if (updated.displayName != null &&
+                        updated.displayName != currentIdentity.displayName
+                    ) {
+                        Log.i(TAG, "Identity update: ${updated.displayName} (${updated.source})")
+                        currentIdentity = updated
+                    }
+                }
+            }
+
+            // Resolve identity (contacts first, then wait for Truecaller)
+            currentIdentity = identityManager.resolveIdentity(
+                number = number,
+                waitMs = TRUECALLER_WAIT_MS
+            )
+
+            // Announce through BT earphones only
+            if (settings.announcementEnabled && audioRouter.isBluetoothAudioConnected()) {
+                announceViaBluetooth(currentIdentity)
+            }
+        }
+    }
+
+    // --------------------------------------------------- BT-only announcement
+
+    /**
+     * Announces the caller through Bluetooth earphones.
+     * Steps:
+     * 1. Pause voice commands (so TTS doesn't trigger recognition)
+     * 2. Connect SCO
+     * 3. Set BT earphone volume to user's configured announcement volume
+     * 4. Speak via TTS through SCO
+     * 5. Restore BT volume to original level
+     * 6. Resume voice commands
+     *
+     * STREAM_RING (speaker ringtone) is NEVER touched.
+     */
+    private suspend fun announceViaBluetooth(identity: CallerIdentity) {
+        if (!stateMachine.isRinging) return
+
+        val scoOk = audioRouter.connectBluetoothAudio()
+        if (!scoOk) {
+            Log.w(TAG, "SCO connection failed — skipping announcement (never plays on speaker)")
+            return
+        }
+
+        val name = identity.displayName ?: getString(R.string.unknown_caller)
+        val text = getString(R.string.announce_incoming_call, name)
+        Log.i(TAG, "Announcing via Bluetooth: '$name' at ${settings.announcementVolumePct}% volume")
+
+        voiceCommands.pause()
+        try {
+            audioRouter.setAnnouncementVolume(settings.announcementVolumePct)
+            announcer.announce(text)
+        } finally {
+            audioRouter.restoreBluetoothVolume()
+            if (settings.voiceCommandsEnabled) {
+                voiceCommands.resume(viaBluetooth = true)
             }
         }
     }
@@ -140,37 +212,29 @@ class CallHandlerService : Service() {
 
             VoiceCommand.REJECT -> {
                 if (!telecom.rejectCall()) {
-                    // API 26-27 fallback: can't end the call, silence it instead.
                     telecom.silenceRinger()
                 }
             }
 
             VoiceCommand.SILENT -> {
-                // Silence the ringer like pressing the power button
                 telecom.silenceRinger()
                 audioRouter.silenceRinger()
             }
         }
     }
 
-    /**
-     * acceptRingingCall() silently fails on many devices, so if the phone
-     * is still ringing shortly after, simulate a headset button press.
-     * The session is torn down only when the OFFHOOK broadcast confirms.
-     */
     private fun answerWithFallback(speakerAfter: Boolean) {
+        announcer.stopSpeaking()
         telecom.answerCall()
         scope.launch {
             delay(ANSWER_FALLBACK_MS)
             if (stateMachine.isRinging) {
-                Log.w(TAG, "Still ringing after acceptRingingCall — using headset-hook fallback")
+                Log.w(TAG, "Still ringing — using headset-hook fallback")
                 telecom.answerViaHeadsetHook()
             }
             repeat(10) {
                 if (!stateMachine.isRinging) {
-                    if (speakerAfter) {
-                        audioRouter.requestSpeakerphoneOnAnswer()
-                    }
+                    if (speakerAfter) audioRouter.requestSpeakerphoneOnAnswer()
                     return@launch
                 }
                 delay(200)
@@ -186,7 +250,6 @@ class CallHandlerService : Service() {
         if (speakerRequested) {
             scope.launch {
                 delay(500)
-                Log.d(TAG, "Activating speakerphone post-answer")
                 audioRouter.requestSpeakerphoneOnAnswer()
             }
         }
@@ -196,23 +259,24 @@ class CallHandlerService : Service() {
     }
 
     private fun onCallEnded() {
-        if (stateMachine.current == CallState.IDLE) return // stale broadcast
+        if (stateMachine.current == CallState.IDLE) return
         stateMachine.transitionTo(CallState.ENDED)
         stopSession()
         stopSelfSafely()
     }
 
-    /** Stop voice recognition and audio changes immediately. */
     private fun stopSession() {
         sessionJob?.cancel()
         sessionJob = null
         overlayStateJob?.cancel()
         overlayStateJob = null
         scope.coroutineContext.cancelChildren()
-        Log.d(TAG, "Voice commands: STOPPING")
+        announcer.stopSpeaking()
         voiceCommands.stopListening()
         hideStatusOverlay()
         audioRouter.restoreAll()
+        identityManager.reset()
+        currentIdentity = CallerIdentity.unknown(null)
         speakerRequested = false
     }
 
@@ -224,6 +288,7 @@ class CallHandlerService : Service() {
 
     override fun onDestroy() {
         stopSession()
+        announcer.shutdown()
         voiceCommands.destroy()
         scope.coroutineContext[Job]?.cancel()
         super.onDestroy()
@@ -231,27 +296,18 @@ class CallHandlerService : Service() {
 
     // --------------------------------------------------------- status overlay
 
-    /**
-     * Shows a small draggable floating pill overlay with:
-     * - A phone icon (app is active / listening to call state)
-     * - A mic icon that updates based on SpeechRecognizer state
-     *
-     * This overlay also satisfies the Android 14 SYSTEM_ALERT_WINDOW
-     * exemption for background-started mic foreground services.
-     */
     private fun showStatusOverlay() {
         if (overlayView != null) return
         if (!Settings.canDrawOverlays(this)) {
-            Log.w(
-                TAG, "Overlay permission missing — voice commands may be mic-blocked. " +
-                        "Grant 'Display over other apps' from the main screen."
-            )
+            Log.w(TAG, "Overlay permission missing")
             return
         }
 
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val view = LayoutInflater.from(this).inflate(R.layout.overlay_status, null)
         micIconView = view.findViewById(R.id.overlayMicIcon)
+
+        val (savedX, savedY) = loadOverlayPosition()
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -261,11 +317,11 @@ class CallHandlerService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = 16
-            y = 100
+            x = savedX
+            y = savedY
         }
 
-        // Make the overlay draggable
+        // Draggable with position persistence
         view.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -282,10 +338,13 @@ class CallHandlerService : Service() {
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        // Gravity is END, so moving right means decreasing x
                         params.x = initialX - (event.rawX - initialTouchX).toInt()
                         params.y = initialY + (event.rawY - initialTouchY).toInt()
                         runCatching { wm.updateViewLayout(view, params) }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        saveOverlayPosition(params.x, params.y)
                         return true
                     }
                 }
@@ -308,7 +367,6 @@ class CallHandlerService : Service() {
         micIconView = null
     }
 
-    /** Update the mic icon in the overlay based on the recognizer state. */
     private fun updateOverlayMicIcon(state: VoiceListenerState) {
         val icon = micIconView ?: return
         when (state) {
@@ -325,6 +383,19 @@ class CallHandlerService : Service() {
                 icon.contentDescription = getString(R.string.overlay_mic_off)
             }
         }
+    }
+
+    private fun saveOverlayPosition(x: Int, y: Int) {
+        getSharedPreferences(OVERLAY_PREFS, MODE_PRIVATE)
+            .edit().putInt("overlay_x", x).putInt("overlay_y", y).apply()
+    }
+
+    private fun loadOverlayPosition(): Pair<Int, Int> {
+        val prefs = getSharedPreferences(OVERLAY_PREFS, MODE_PRIVATE)
+        return Pair(
+            prefs.getInt("overlay_x", DEFAULT_OVERLAY_X),
+            prefs.getInt("overlay_y", DEFAULT_OVERLAY_Y)
+        )
     }
 
     // ------------------------------------------------------------ foreground
@@ -369,12 +440,20 @@ class CallHandlerService : Service() {
 
     companion object {
         private const val TAG = "CallHandlerService"
+        private const val OVERLAY_PREFS = "overlay_prefs"
+        private const val DEFAULT_OVERLAY_X = 16
+        private const val DEFAULT_OVERLAY_Y = 400
 
         const val ACTION_RINGING = "com.callhandler.action.RINGING"
         const val ACTION_ANSWERED = "com.callhandler.action.ANSWERED"
         const val ACTION_ENDED = "com.callhandler.action.ENDED"
+        const val ACTION_TRUECALLER_UPDATE = "com.callhandler.action.TRUECALLER_UPDATE"
+
+        const val EXTRA_NUMBER = "extra_number"
+        const val EXTRA_CALLER_NAME = "extra_caller_name"
 
         private const val NOTIFICATION_ID = 42
+        private const val TRUECALLER_WAIT_MS = 2500L
         private const val ANSWER_FALLBACK_MS = 700L
     }
 }

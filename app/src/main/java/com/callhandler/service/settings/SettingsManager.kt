@@ -16,7 +16,22 @@ class SettingsManager(context: Context) {
     val voiceCommandsEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOICE_COMMANDS, true)
 
+    /** Announce caller ID through Bluetooth earphones when connected. */
+    val announcementEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ANNOUNCEMENT, true)
+
+    /** TTS speech rate in percent (50..200; 100 = normal). */
+    val speechRatePct: Int
+        get() = prefs.getInt(KEY_SPEECH_RATE, 100).coerceIn(50, 200)
+
+    /** Announcement volume percent of the VOICE_CALL stream max (20..100). */
+    val announcementVolumePct: Int
+        get() = prefs.getInt(KEY_ANNOUNCEMENT_VOLUME, 70).coerceIn(20, 100)
+
     companion object {
         const val KEY_VOICE_COMMANDS = "pref_voice_commands_enabled"
+        const val KEY_ANNOUNCEMENT = "pref_announcement_enabled"
+        const val KEY_SPEECH_RATE = "pref_speech_rate_pct"
+        const val KEY_ANNOUNCEMENT_VOLUME = "pref_announcement_volume_pct"
     }
 }

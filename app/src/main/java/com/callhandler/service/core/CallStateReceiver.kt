@@ -8,10 +8,6 @@ import android.util.Log
 
 /**
  * Receives PHONE_STATE broadcasts and forwards them to [CallHandlerService].
- *
- * Note: on Android 12+ starting a foreground service from a background
- * receiver is blocked UNLESS the app is exempt from battery optimization —
- * make sure the app is set to "Unrestricted" battery usage.
  */
 class CallStateReceiver : BroadcastReceiver() {
 
@@ -19,6 +15,7 @@ class CallStateReceiver : BroadcastReceiver() {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
+        val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
 
         val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
             action = when (state) {
@@ -26,6 +23,9 @@ class CallStateReceiver : BroadcastReceiver() {
                 TelephonyManager.EXTRA_STATE_OFFHOOK -> CallHandlerService.ACTION_ANSWERED
                 TelephonyManager.EXTRA_STATE_IDLE -> CallHandlerService.ACTION_ENDED
                 else -> return
+            }
+            if (number != null) {
+                putExtra(CallHandlerService.EXTRA_NUMBER, number)
             }
         }
 

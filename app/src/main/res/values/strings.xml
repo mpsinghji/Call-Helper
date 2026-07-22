@@ -1,23 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Call Handler</string>
+    <string name="notification_listener_label">Call Handler — Truecaller caller-ID</string>
 
     <string name="channel_service_name">Voice command listener</string>
     <string name="channel_service_desc">Ongoing notification while listening for voice commands during a call</string>
     <string name="notif_title">Listening for voice commands</string>
     <string name="notif_text">Say: Answer, Reject, Speaker, or Silent</string>
 
+    <string name="unknown_caller">Unknown caller</string>
+    <string name="announce_incoming_call">Incoming call from %1$s</string>
+
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="pref_cat_voice">Voice commands</string>
     <string name="pref_voice_commands_title">Enable voice commands</string>
     <string name="pref_voice_commands_summary">Answer, Reject, Silent, Speaker</string>
+    <string name="pref_cat_announcement">Bluetooth announcement</string>
+    <string name="pref_announcement_title">Announce caller ID</string>
+    <string name="pref_announcement_summary">Announce through Bluetooth earphones only (never speaker)</string>
+    <string name="pref_cat_audio">Audio</string>
+    <string name="pref_speech_rate_title">Speech rate</string>
+    <string name="pref_announcement_volume_title">Announcement volume</string>
+    <string name="pref_announcement_volume_summary">Volume level for BT announcements (% of max)</string>
 
     <!-- Permissions -->
-    <string name="perm_rationale">Call Handler needs phone and microphone access to listen for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.</string>
+    <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.\n\nNotification access is needed for Truecaller caller-ID announcements through Bluetooth earphones.</string>
     <string name="setup_status">Setup: %1$d / %2$d completed</string>
     <string name="btn_grant_permissions">Grant permissions</string>
-    <string name="btn_overlay_permission">Allow display over other apps (required for voice commands)</string>
+    <string name="btn_notification_access">Open notification access (for Truecaller)</string>
+    <string name="btn_overlay_permission">Allow display over other apps</string>
+    <string name="btn_test_bluetooth">Test Bluetooth announcement</string>
+
+    <!-- Test button -->
+    <string name="test_bt_not_connected">Connect Bluetooth earphones first</string>
+    <string name="test_bt_starting">Testing Bluetooth announcement…</string>
+    <string name="test_bt_sco_failed">Bluetooth audio connection failed</string>
+    <string name="test_bt_announcement_text">This is a test announcement from Call Handler. If you can hear this through your earphones, Bluetooth announcement is working correctly.</string>
+    <string name="test_bt_done">Bluetooth test complete</string>
 
     <!-- Overlay -->
     <string name="overlay_phone_desc">Call Handler active</string>

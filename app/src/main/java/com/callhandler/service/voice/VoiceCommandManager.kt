@@ -22,22 +22,22 @@ import java.util.Locale
 enum class VoiceListenerState {
     /** Recognizer is actively listening for voice commands. */
     LISTENING,
-    /** Recognizer exists but is temporarily paused. */
+    /** Recognizer exists but is temporarily paused (e.g. during TTS). */
     PAUSED,
     /** Recognizer is not running (disabled or stopped). */
     OFF
 }
 
 /**
- * Continuous voice-command listener with state-machine management.
+ * Continuous voice-command listener.
  *
- * This manager coordinates with the system SpeechRecognizer to provide
- * reliable voice command detection during incoming calls. It handles
- * race conditions with audio focus and Bluetooth SCO by using
- * a state machine and appropriate delays.
+ * Key design: restarts the recognizer as fast as possible (≤ 50 ms)
+ * after each result or benign error (NO_MATCH / SPEECH_TIMEOUT) so the
+ * user perceives a single uninterrupted listening session.
  *
- * Exposes [listenerState] as a StateFlow so the overlay can observe
- * whether the recognizer is LISTENING, PAUSED, or OFF.
+ * Partial results are acted on immediately for responsive command
+ * execution, but the recognizer is NOT cancelled mid-session — it
+ * finishes naturally. The debounce window prevents double-actions.
  */
 class VoiceCommandManager(
     private val context: Context,
@@ -56,7 +56,7 @@ class VoiceCommandManager(
     val listenerState: StateFlow<VoiceListenerState> = _listenerState
 
     private var sessionId = 0
-    private var consecutiveNoMatch = 0
+    private var consecutiveErrors = 0
     private val restartRunnable = Runnable { beginListening() }
 
     private var lastCommandAt = 0L
@@ -66,11 +66,13 @@ class VoiceCommandManager(
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-        // Increased silence timeouts to be more forgiving during ringing
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+        // Long silence timeouts so each session stays open longer,
+        // reducing the number of restart cycles.
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 8000L)
     }
 
     /** Start the continuous listener (idempotent). */
@@ -101,14 +103,13 @@ class VoiceCommandManager(
     }
 
     /**
-     * Pause processing results and prevent new listening sessions.
-     * Explicitly cancels the current session.
+     * Pause listening. Cancels the current session to avoid hearing
+     * the app's own TTS announcement.
      */
     fun pause() {
         mainHandler.post {
             if (state == State.STOPPED || state == State.PAUSED) return@post
-            val hash = System.identityHashCode(recognizer)
-            Log.d(TAG, "PAUSE requested hash=$hash")
+            Log.d(TAG, "PAUSE requested")
             state = State.PAUSED
             _listenerState.value = VoiceListenerState.PAUSED
             mainHandler.removeCallbacks(restartRunnable)
@@ -116,12 +117,12 @@ class VoiceCommandManager(
         }
     }
 
-    /** Resume listening after a pause, with a delay to let audio settle. */
+    /** Resume listening after a pause. */
     fun resume(viaBluetooth: Boolean = false) {
         mainHandler.post {
             if (state != State.PAUSED) return@post
             val delay = if (viaBluetooth) RESUME_DELAY_BT_MS else RESUME_DELAY_SPEAKER_MS
-            Log.d(TAG, "RESUME requested (viaBluetooth=$viaBluetooth). Waiting ${delay}ms...")
+            Log.d(TAG, "RESUME (viaBluetooth=$viaBluetooth, delay=${delay}ms)")
             state = State.IDLE
             restartAfter(delay)
         }
@@ -130,12 +131,9 @@ class VoiceCommandManager(
     private fun beginListening() {
         sessionId++
         val sid = sessionId
-        val hash = System.identityHashCode(recognizer)
-
-        Log.d(TAG, "[$sid] beginListening() state=$state recognizer=$hash")
 
         if (state != State.IDLE) {
-            Log.d(TAG, "[$sid] beginListening ignored: state is $state")
+            Log.d(TAG, "[$sid] beginListening ignored: state=$state")
             return
         }
 
@@ -143,9 +141,8 @@ class VoiceCommandManager(
         state = State.STARTING
 
         runCatching {
-            recognizer?.setRecognitionListener(createListener(sid, hash))
+            recognizer?.setRecognitionListener(createListener(sid))
             recognizer?.startListening(recognizerIntent)
-            Log.d(TAG, "[$sid] startListening() returned")
         }.onFailure { e ->
             Log.e(TAG, "[$sid] startListening failed: ${e.message}")
             state = State.IDLE
@@ -157,15 +154,11 @@ class VoiceCommandManager(
     }
 
     private fun recreateRecognizer(): Boolean {
-        Log.d(TAG, "Recreating SpeechRecognizer instance...")
-
         recognizer?.let { rec ->
             runCatching { rec.cancel() }
             runCatching { rec.destroy() }
         }
-
         if (state == State.STOPPED) return false
-
         return runCatching {
             recognizer = SpeechRecognizer.createSpeechRecognizer(context)
             true
@@ -184,76 +177,57 @@ class VoiceCommandManager(
 
     private fun handlePhrases(phrases: List<String>): Boolean {
         if (state == State.PAUSED || state == State.STOPPED) return false
-        Log.d(TAG, "Recognizer phrases = $phrases")
-        if (phrases.isEmpty()) {
-            Log.d(TAG, "Recognizer returned no phrases")
-            return false
-        }
+        if (phrases.isEmpty()) return false
 
         val command = phrases.firstNotNullOfOrNull { VoiceCommand.fromPhrase(it) }
-
-        if (command == null) {
-            onUnrecognizedPhrases(phrases)
-            return false
-        }
+            ?: run {
+                onUnrecognizedPhrases(phrases)
+                return false
+            }
 
         val now = SystemClock.elapsedRealtime()
         if (command == lastCommand && now - lastCommandAt < COMMAND_DEBOUNCE_MS) return true
 
         lastCommand = command
         lastCommandAt = now
-        Log.i(TAG, "MATCHED command: $command (from $phrases)")
+        Log.i(TAG, "MATCHED: $command (from $phrases)")
 
-        runCatching {
-            onCommand(command, phrases)
-        }.onFailure { e ->
-            Log.e(TAG, "Command callback failed", e)
-        }
-
+        runCatching { onCommand(command, phrases) }
+            .onFailure { Log.e(TAG, "Command callback failed", it) }
         return true
     }
 
-    private fun createListener(sid: Int, hash: Int) = object : RecognitionListener {
+    private fun createListener(sid: Int) = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
-            Log.d(TAG, "[$sid] READY state=$state hash=$hash")
             if (state != State.STARTING) return
             state = State.LISTENING
             _listenerState.value = VoiceListenerState.LISTENING
+            consecutiveErrors = 0
+            Log.d(TAG, "[$sid] READY — listening")
         }
 
-        override fun onBeginningOfSpeech() {
-            Log.d(TAG, "[$sid] BEGIN state=$state hash=$hash")
-            consecutiveNoMatch = 0
-        }
-
-        override fun onRmsChanged(rmsdB: Float) {
-            // Intentionally not logging RMS every frame to reduce log spam
-        }
-
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
-
-        override fun onEndOfSpeech() {
-            Log.d(TAG, "[$sid] END state=$state hash=$hash")
-        }
+        override fun onEndOfSpeech() {}
 
         override fun onError(error: Int) {
-            val errorMsg = when (error) {
+            if (state == State.STOPPED) return
+
+            val name = when (error) {
+                SpeechRecognizer.ERROR_NO_MATCH -> "NO_MATCH"
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "SPEECH_TIMEOUT"
                 SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT"
                 SpeechRecognizer.ERROR_NETWORK -> "NETWORK"
                 SpeechRecognizer.ERROR_AUDIO -> "AUDIO"
                 SpeechRecognizer.ERROR_SERVER -> "SERVER"
                 SpeechRecognizer.ERROR_CLIENT -> "CLIENT"
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "SPEECH_TIMEOUT"
-                SpeechRecognizer.ERROR_NO_MATCH -> "NO_MATCH"
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "RECOGNIZER_BUSY"
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "INSUFFICIENT_PERMISSIONS"
-                else -> "UNKNOWN ($error)"
+                else -> "UNKNOWN($error)"
             }
 
-            Log.w(TAG, "[$sid] ERROR: $errorMsg state=$state")
-
-            if (state == State.STOPPED) return
-
+            if (state == State.PAUSED) return
             if (state == State.STARTING || state == State.LISTENING) {
                 state = State.IDLE
                 _listenerState.value = VoiceListenerState.OFF
@@ -261,82 +235,71 @@ class VoiceCommandManager(
 
             when (error) {
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                    Log.e(TAG, "[$sid] Insufficient permissions, stopping.")
+                    Log.e(TAG, "[$sid] $name — stopping")
                     stopListening()
                 }
+                // Benign "nothing heard" — restart immediately
+                SpeechRecognizer.ERROR_NO_MATCH,
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                    consecutiveErrors++
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        Log.w(TAG, "[$sid] $name ($consecutiveErrors consecutive) — recreating")
+                        consecutiveErrors = 0
+                        if (recreateRecognizer()) restartAfter(RETRY_SLOW_MS)
+                    } else {
+                        restartAfter(RESTART_INSTANT_MS)
+                    }
+                }
+                // Critical — need a clean slate
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
                 SpeechRecognizer.ERROR_CLIENT,
                 SpeechRecognizer.ERROR_AUDIO -> {
-                    consecutiveNoMatch = 0
-                    if (recreateRecognizer()) {
-                        restartAfter(RETRY_SLOW_MS)
-                    }
-                }
-                SpeechRecognizer.ERROR_NO_MATCH -> {
-                    consecutiveNoMatch++
-                    if (consecutiveNoMatch >= 3) {
-                        Log.w(TAG, "[$sid] 3 consecutive NO_MATCH, recreating recognizer...")
-                        consecutiveNoMatch = 0
-                        if (recreateRecognizer()) {
-                            restartAfter(RETRY_SLOW_MS)
-                        }
-                    } else {
-                        restartAfter(RETRY_FAST_MS)
-                    }
+                    Log.w(TAG, "[$sid] $name — recreating recognizer")
+                    consecutiveErrors = 0
+                    if (recreateRecognizer()) restartAfter(RETRY_SLOW_MS)
                 }
                 else -> {
-                    consecutiveNoMatch = 0
+                    Log.w(TAG, "[$sid] $name")
+                    consecutiveErrors = 0
                     restartAfter(RETRY_FAST_MS)
                 }
             }
         }
 
         override fun onResults(results: Bundle?) {
-            if (state != State.LISTENING) {
-                Log.d(TAG, "[$sid] onResults ignored: state is $state hash=$hash")
-                return
-            }
+            if (state != State.LISTENING) return
 
-            consecutiveNoMatch = 0
             val phrases = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.map { it.trim() }
-                ?.filter { it.isNotEmpty() }
-                .orEmpty()
-            Log.d(TAG, "[$sid] RESULTS: $phrases state=$state hash=$hash")
+                ?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+            Log.d(TAG, "[$sid] RESULTS: $phrases")
 
             handlePhrases(phrases)
 
+            // Restart immediately for continuous listening
             if (state != State.STOPPED && state != State.PAUSED) {
                 state = State.IDLE
                 _listenerState.value = VoiceListenerState.OFF
-                restartAfter(RETRY_FAST_MS)
+                restartAfter(RESTART_INSTANT_MS)
             }
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
-            if (state != State.LISTENING) {
-                return
-            }
+            if (state != State.LISTENING) return
 
-            consecutiveNoMatch = 0
-            val phrases = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.map { it.trim() }
-                ?.filter { it.isNotEmpty() }
-                .orEmpty()
-            Log.d(TAG, "[$sid] PARTIAL: $phrases state=$state hash=$hash")
+            val phrases = partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 
-            if (handlePhrases(phrases)) {
-                Log.d(TAG, "[$sid] Command matched in partial results, restarting...")
-                runCatching { recognizer?.cancel() }
-                state = State.IDLE
-                _listenerState.value = VoiceListenerState.OFF
-                restartAfter(RETRY_FAST_MS)
+            if (phrases.isNotEmpty()) {
+                Log.d(TAG, "[$sid] PARTIAL: $phrases")
+                // Act on partial match immediately; do NOT cancel the
+                // recognizer — let it finish naturally. Debounce prevents
+                // the same command from firing again in onResults.
+                handlePhrases(phrases)
             }
         }
 
-        override fun onEvent(eventType: Int, params: Bundle?) {
-            Log.d(TAG, "[$sid] EVENT: $eventType state=$state hash=$hash")
-        }
+        override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
     /** Stop and release the recognizer. */
@@ -357,11 +320,13 @@ class VoiceCommandManager(
     fun destroy() = stopListening()
 
     companion object {
-        private const val TAG = "VoiceCommandManager"
-        private const val RETRY_FAST_MS = 1000L
-        private const val RETRY_SLOW_MS = 1500L
-        private const val RESUME_DELAY_BT_MS = 700L
-        private const val RESUME_DELAY_SPEAKER_MS = 300L
+        private const val TAG = "VoiceCommandMgr"
+        private const val RESTART_INSTANT_MS = 50L    // near-zero gap between sessions
+        private const val RETRY_FAST_MS = 300L         // after minor server/network errors
+        private const val RETRY_SLOW_MS = 1200L        // after recreating recognizer
+        private const val RESUME_DELAY_BT_MS = 500L    // after TTS via Bluetooth
+        private const val RESUME_DELAY_SPEAKER_MS = 200L
         private const val COMMAND_DEBOUNCE_MS = 2000L
+        private const val MAX_CONSECUTIVE_ERRORS = 5
     }
 }
