@@ -13,46 +13,45 @@ import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
-import com.callhandler.service.settings.SettingsManager
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
-import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
- * Route selection, ringtone ducking, and Bluetooth SCO management.
+ * Bluetooth SCO management and call-audio helpers.
  *
- * Key insight: during RINGING the phone suspends the Bluetooth media
- * channel (A2DP), so TTS played "as media" never reaches the earphones.
- * Announcements over Bluetooth must use the phone-call channel (SCO),
- * which we open just for the announcement and close right after.
+ * Now simplified: no TTS announcement ducking. Only handles
+ * SCO for microphone routing (voice commands via Bluetooth),
+ * ringer silencing, and speakerphone toggling.
  */
-class AudioRouter(
-    private val context: Context,
-    private val settings: SettingsManager
-) {
-    enum class Route { BLUETOOTH, SPEAKER, NONE }
+class AudioRouter(private val context: Context) {
 
     private val audioManager =
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-    private var originalRingVolume = -1
-    private var originalMusicVolume = -1
-    private var originalVoiceCallVolume = -1
-    private var ringDucked = false
-    private var ringerSilenced = false
-    private var scoConnected = false
-
-    fun selectRoute(): Route = when {
-        settings.bluetoothEnabled && isBluetoothAudioConnected() -> Route.BLUETOOTH
-        settings.speakerEnabled -> Route.SPEAKER
-        else -> Route.NONE
+    private val bluetoothAdapter: BluetoothAdapter? by lazy {
+        (context.getSystemService(Context.BLUETOOTH_SERVICE)
+                as? BluetoothManager)?.adapter ?: BluetoothAdapter.getDefaultAdapter()
     }
+
+    private var scoConnected = false
 
     fun isBluetoothAudioConnected(): Boolean {
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+
+        val hasConnectPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
+                    PackageManager.PERMISSION_GRANTED
+        } else true
+
+        if (hasConnectPermission) {
+            Log.d(TAG, "HEADSET state = ${
+                bluetoothAdapter?.getProfileConnectionState(BluetoothProfile.HEADSET)
+            }")
+        }
+
         val viaAudioManager = devices.any {
             it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                     it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
@@ -67,9 +66,7 @@ class AudioRouter(
             != PackageManager.PERMISSION_GRANTED
         ) return false
 
-        val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE)
-                as? BluetoothManager)?.adapter ?: BluetoothAdapter.getDefaultAdapter()
-        val a = adapter ?: return false
+        val a = bluetoothAdapter ?: return false
         return runCatching {
             a.getProfileConnectionState(BluetoothProfile.HEADSET) ==
                     BluetoothHeadset.STATE_CONNECTED ||
@@ -81,10 +78,9 @@ class AudioRouter(
     // ------------------------------------------------------------ SCO channel
 
     /**
-     * Open the Bluetooth phone-call audio channel so TTS (and the mic for
-     * voice commands) go through the earphones. Suspends until connected
-     * or [SCO_TIMEOUT_MS] passes. Returns false on failure — caller should
-     * then announce on the speaker instead.
+     * Open the Bluetooth phone-call audio channel so the mic for
+     * voice commands goes through the earphones. Suspends until connected
+     * or [SCO_TIMEOUT_MS] passes.
      */
     suspend fun connectBluetoothAudio(): Boolean {
         if (scoConnected) return true
@@ -102,18 +98,21 @@ class AudioRouter(
         val device = audioManager.availableCommunicationDevices.firstOrNull {
             it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
         } ?: return false
+        Log.d(TAG, "Communication device selected: $device")
         return runCatching { audioManager.setCommunicationDevice(device) }
             .getOrDefault(false)
     }
 
     private suspend fun connectViaLegacySco(): Boolean {
         if (audioManager.isBluetoothScoOn) return true
+        Log.d(TAG, "Connecting Bluetooth SCO (legacy)...")
         return withTimeoutOrNull(SCO_TIMEOUT_MS) {
             suspendCancellableCoroutine { cont ->
                 val receiver = object : BroadcastReceiver() {
                     override fun onReceive(c: Context, i: Intent) {
                         val state = i.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
                         if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
+                            Log.d(TAG, "Bluetooth SCO connected")
                             runCatching { context.unregisterReceiver(this) }
                             if (cont.isActive) cont.resume(true)
                         }
@@ -139,6 +138,7 @@ class AudioRouter(
 
     fun disconnectBluetoothAudio() {
         if (!scoConnected) return
+        Log.d(TAG, "Bluetooth SCO disconnected")
         scoConnected = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             runCatching { audioManager.clearCommunicationDevice() }
@@ -150,83 +150,15 @@ class AudioRouter(
         }
     }
 
-    // ------------------------------------------------------ announce window
-
-    /**
-     * Duck the ringtone and make sure the stream carrying the TTS is
-     * audible: STREAM_VOICE_CALL for Bluetooth SCO, STREAM_MUSIC for
-     * speaker. Undone by [endAnnouncementWindow].
-     */
-    fun beginAnnouncementWindow(route: Route) {
-        if (!ringDucked && !ringerSilenced) {
-            val current = audioManager.getStreamVolume(AudioManager.STREAM_RING)
-            if (current > 0) {
-                originalRingVolume = current
-                val target = (current * settings.duckLevelPct / 100f).roundToInt()
-                // Never fully silence — keep at least one volume step so the
-                // ring stays audible under the announcement.
-                setStreamSafely(AudioManager.STREAM_RING, max(1, target))
-                ringDucked = true
-            }
-        }
-
-        val stream = if (route == Route.BLUETOOTH) {
-            AudioManager.STREAM_VOICE_CALL
-        } else {
-            AudioManager.STREAM_MUSIC
-        }
-
-        val ringVolume = audioManager.getStreamVolume(AudioManager.STREAM_RING)
-        val maxRing = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING)
-
-        val maxTarget = audioManager.getStreamMaxVolume(stream)
-        val cur = audioManager.getStreamVolume(stream)
-
-        val target =
-            ((ringVolume.toFloat() / maxRing) * maxTarget).roundToInt()
-
-
-        if (stream == AudioManager.STREAM_MUSIC && originalMusicVolume < 0) {
-            originalMusicVolume = cur
-        }
-        if (stream == AudioManager.STREAM_VOICE_CALL && originalVoiceCallVolume < 0) {
-            originalVoiceCallVolume = cur
-        }
-        setStreamSafely(stream, target)
-
-    }
-
-    fun endAnnouncementWindow() {
-        if (ringDucked && !ringerSilenced && originalRingVolume >= 0) {
-            setStreamSafely(AudioManager.STREAM_RING, originalRingVolume)
-        }
-        ringDucked = false
-        if (originalMusicVolume >= 0) {
-            setStreamSafely(AudioManager.STREAM_MUSIC, originalMusicVolume)
-            originalMusicVolume = -1
-        }
-        if (originalVoiceCallVolume >= 0) {
-            setStreamSafely(AudioManager.STREAM_VOICE_CALL, originalVoiceCallVolume)
-            originalVoiceCallVolume = -1
-        }
-    }
-
     // -------------------------------------------------------- voice actions
 
+    /** Silence the ringer — same as pressing the power button during a ring. */
     fun silenceRinger() {
-        if (originalRingVolume < 0) {
-            originalRingVolume = audioManager.getStreamVolume(AudioManager.STREAM_RING)
-        }
-        setStreamSafely(AudioManager.STREAM_RING, 0)
-        ringerSilenced = true
-    }
-
-    fun adjustRingVolume(up: Boolean) {
-        val direction = if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
         runCatching {
-            audioManager.adjustStreamVolume(AudioManager.STREAM_RING, direction, 0)
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_RING, 0, 0
+            )
         }
-        originalRingVolume = audioManager.getStreamVolume(AudioManager.STREAM_RING)
     }
 
     fun requestSpeakerphoneOnAnswer() {
@@ -239,32 +171,10 @@ class AudioRouter(
     /** Restore every audio setting we touched. Safe to call repeatedly. */
     fun restoreAll() {
         disconnectBluetoothAudio()
-        if (!ringerSilenced && originalRingVolume >= 0) {
-            setStreamSafely(AudioManager.STREAM_RING, originalRingVolume)
-        }
-        if (originalMusicVolume >= 0) {
-            setStreamSafely(AudioManager.STREAM_MUSIC, originalMusicVolume)
-        }
-        if (originalVoiceCallVolume >= 0) {
-            setStreamSafely(AudioManager.STREAM_VOICE_CALL, originalVoiceCallVolume)
-        }
-        ringDucked = false
-        ringerSilenced = false
-        originalRingVolume = -1
-        originalMusicVolume = -1
-        originalVoiceCallVolume = -1
-    }
-
-    private fun setStreamSafely(stream: Int, volume: Int) {
-        runCatching {
-            // Throws SecurityException under Do-Not-Disturb without policy
-            // access — ignore in that case.
-            audioManager.setStreamVolume(stream, volume, 0)
-        }
     }
 
     companion object {
-        private const val ANNOUNCE_LEVEL = 0.75f
+        private const val TAG = "AudioRouter"
         private const val SCO_TIMEOUT_MS = 3000L
     }
 }

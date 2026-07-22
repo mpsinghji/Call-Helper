@@ -16,6 +16,14 @@
             android:layout_height="wrap_content"
             android:textAppearance="?attr/textAppearanceBodyMedium" />
 
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="?attr/colorPrimary" />
+
         <Button
             android:id="@+id/grantPermissionsButton"
             style="?attr/materialButtonStyle"
@@ -23,14 +31,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/btn_grant_permissions" />
-
-        <Button
-            android:id="@+id/notificationAccessButton"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/btn_notification_access" />
 
         <Button
             android:id="@+id/overlayPermissionButton"

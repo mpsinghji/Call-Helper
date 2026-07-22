@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/overlay_background"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="10dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
+
+    <!-- Phone icon: app is active -->
+    <ImageView
+        android:id="@+id/overlayPhoneIcon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:src="@drawable/ic_phone_active"
+        android:contentDescription="@string/overlay_phone_desc" />
+
+    <!-- Divider -->
+    <View
+        android:layout_width="1dp"
+        android:layout_height="14dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:background="#44FFFFFF" />
+
+    <!-- Mic status icon: changes based on recognizer state -->
+    <ImageView
+        android:id="@+id/overlayMicIcon"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:src="@drawable/ic_mic_off"
+        android:contentDescription="@string/overlay_mic_desc" />
+
+</LinearLayout>

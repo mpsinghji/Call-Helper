@@ -19,7 +19,6 @@ class CallStateReceiver : BroadcastReceiver() {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
-        val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
 
         val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
             action = when (state) {
@@ -28,14 +27,13 @@ class CallStateReceiver : BroadcastReceiver() {
                 TelephonyManager.EXTRA_STATE_IDLE -> CallHandlerService.ACTION_ENDED
                 else -> return
             }
-            putExtra(CallHandlerService.EXTRA_NUMBER, number)
         }
 
         if (state == TelephonyManager.EXTRA_STATE_RINGING) {
             runCatching { context.startForegroundService(serviceIntent) }
                 .onFailure {
-                    Log.e(TAG, "Cannot start service from background: ${it.message}. " +
-                            "Disable battery optimization for this app.")
+                    Log.e(TAG, "Foreground service start failed: ${it.message}. " +
+                            "Check battery optimization and background execution restrictions.")
                 }
         } else {
             runCatching { context.startService(serviceIntent) }

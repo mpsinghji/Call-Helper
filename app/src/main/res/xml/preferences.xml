@@ -1,52 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
-
-    <PreferenceCategory android:title="@string/pref_cat_announcements">
-
-        <SwitchPreferenceCompat
-            android:key="pref_bluetooth_enabled"
-            android:title="@string/pref_bluetooth_title"
-            android:summary="@string/pref_bluetooth_summary"
-            android:defaultValue="true" />
-
-        <SwitchPreferenceCompat
-            android:key="pref_speaker_enabled"
-            android:title="@string/pref_speaker_title"
-            android:summary="@string/pref_speaker_summary"
-            android:defaultValue="true" />
-
-        <SwitchPreferenceCompat
-            android:key="pref_whatsapp_enabled"
-            android:title="@string/pref_whatsapp_title"
-            android:summary="@string/pref_whatsapp_summary"
-            android:defaultValue="true" />
-
-        <SwitchPreferenceCompat
-            android:key="pref_repeat_enabled"
-            android:title="@string/pref_repeat_title"
-            android:summary="@string/pref_repeat_summary"
-            android:defaultValue="true" />
-
-        <SeekBarPreference
-            android:key="pref_repeat_interval_sec"
-            android:title="@string/pref_repeat_interval_title"
-            android:defaultValue="8"
-            android:max="30"
-            app:min="3"
-            app:showSeekBarValue="true"
-            android:dependency="pref_repeat_enabled" />
-
-        <SeekBarPreference
-            android:key="pref_max_repeats"
-            android:title="@string/pref_max_repeats_title"
-            android:defaultValue="3"
-            android:max="10"
-            app:min="1"
-            app:showSeekBarValue="true"
-            android:dependency="pref_repeat_enabled" />
-
-    </PreferenceCategory>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <PreferenceCategory android:title="@string/pref_cat_voice">
 
@@ -55,29 +8,6 @@
             android:title="@string/pref_voice_commands_title"
             android:summary="@string/pref_voice_commands_summary"
             android:defaultValue="true" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory android:title="@string/pref_cat_audio">
-
-        <!-- Stored as int 50..200, mapped to TTS rate 0.5..2.0 -->
-        <SeekBarPreference
-            android:key="pref_speech_rate_pct"
-            android:title="@string/pref_speech_rate_title"
-            android:defaultValue="100"
-            android:max="200"
-            app:min="50"
-            app:showSeekBarValue="true" />
-
-        <!-- Percentage of normal ring volume to keep while speaking -->
-        <SeekBarPreference
-            android:key="pref_duck_level_pct"
-            android:title="@string/pref_duck_level_title"
-            android:summary="@string/pref_duck_level_summary"
-            android:defaultValue="20"
-            android:max="80"
-            app:min="0"
-            app:showSeekBarValue="true" />
 
     </PreferenceCategory>
 

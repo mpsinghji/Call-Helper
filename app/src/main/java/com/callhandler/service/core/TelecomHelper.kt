@@ -45,6 +45,13 @@ class TelecomHelper(private val context: Context) {
         }
     }
 
+    /** Silences the current ringer. Only affects the current call. */
+    fun silenceRinger() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching { telecomManager?.silenceRinger() }
+        }
+    }
+
     /**
      * Rejects the ringing call. API 28+ only; on 26-27 the caller falls
      * back to silencing the ringer.

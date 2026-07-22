@@ -5,37 +5,40 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
+import android.view.Gravity
+import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.ImageView
 import androidx.core.app.NotificationCompat
 import com.callhandler.service.App
 import com.callhandler.service.R
-import com.callhandler.service.audio.AnnouncementManager
 import com.callhandler.service.audio.AudioRouter
-import com.callhandler.service.identity.CallerIdentityManager
 import com.callhandler.service.settings.SettingsManager
 import com.callhandler.service.ui.MainActivity
 import com.callhandler.service.voice.VoiceCommand
 import com.callhandler.service.voice.VoiceCommandManager
+import com.callhandler.service.voice.VoiceListenerState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import android.graphics.PixelFormat
-import android.net.Uri
-import android.provider.Settings
-import android.view.Gravity
-import android.view.View
-import android.view.WindowManager
 
 /**
  * Foreground orchestrator for one incoming-call session.
+ *
+ * Listens for voice commands (answer, reject, speaker, silent) during
+ * incoming cellular calls. Shows a small floating overlay with a mic
+ * icon indicating the recognizer state.
  */
 class CallHandlerService : Service() {
 
@@ -44,16 +47,14 @@ class CallHandlerService : Service() {
     private lateinit var settings: SettingsManager
     private lateinit var stateMachine: CallStateMachine
     private lateinit var audioRouter: AudioRouter
-    private lateinit var announcer: AnnouncementManager
     private lateinit var voiceCommands: VoiceCommandManager
-    private lateinit var identityManager: CallerIdentityManager
     private lateinit var telecom: TelecomHelper
 
     private var sessionJob: Job? = null
-
     private var overlayView: View? = null
-    private var callSource: CallSource = CallSource.CELLULAR
-    private var currentIdentity: CallerIdentity = CallerIdentity.unknown(null)
+    private var micIconView: ImageView? = null
+    private var overlayStateJob: Job? = null
+    private var speakerRequested = false
 
     override fun onCreate() {
         super.onCreate()
@@ -61,40 +62,35 @@ class CallHandlerService : Service() {
         stateMachine = CallStateMachine { from, to ->
             Log.d(TAG, "State: $from -> $to")
         }
-        audioRouter = AudioRouter(this, settings)
-        announcer = AnnouncementManager(this, settings)
+        audioRouter = AudioRouter(this)
         telecom = TelecomHelper(this)
-        identityManager = CallerIdentityManager(this)
-        voiceCommands = VoiceCommandManager(this, settings) { command ->
-            onVoiceCommand(command)
-        }
+        voiceCommands = VoiceCommandManager(
+            context = this,
+            settings = settings,
+            onCommand = { command, _ -> onVoiceCommand(command) },
+            onUnrecognizedPhrases = { phrases ->
+                if (phrases.isEmpty()) {
+                    Log.d(TAG, "Recognizer returned NO phrases")
+                } else {
+                    phrases.forEachIndexed { index, phrase ->
+                        Log.d(TAG, "Unrecognized[$index] = '$phrase'")
+                    }
+                }
+            }
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_RINGING -> {
-                showMicExemptionOverlay()
                 startForegroundCompat()
-                onRinging(intent.getStringExtra(EXTRA_NUMBER))
-            }
-
-            ACTION_WHATSAPP_RINGING -> {
-                startForegroundCompat()
-                if (settings.whatsappEnabled) {
-                    onWhatsAppRinging(intent)
-                } else if (!stateMachine.isRinging) {
-                    stopSelfSafely()
-                }
+                showStatusOverlay()
+                onRinging()
             }
 
             ACTION_ANSWERED -> onCallAnswered()
 
-            ACTION_ENDED, ACTION_WHATSAPP_DISMISSED -> onCallEnded()
-
-            ACTION_TRUECALLER_UPDATE -> {
-                val name = intent.getStringExtra(EXTRA_CALLER_NAME)
-                if (name != null) identityManager.onTruecallerName(name)
-            }
+            ACTION_ENDED -> onCallEnded()
         }
         return START_NOT_STICKY
     }
@@ -103,145 +99,57 @@ class CallHandlerService : Service() {
 
     // ---------------------------------------------------------------- ringing
 
-    private fun onRinging(number: String?) {
-        if (stateMachine.isRinging) {
-            // Duplicate RINGING broadcast — on Android 10+ the number often
-            // arrives only in this second broadcast. Always forward it; the
-            // identity manager de-duplicates.
-            if (number != null) {
-                scope.launch(Dispatchers.IO) {
-                    identityManager.onNumberAvailable(number)
-                }
-            }
-            return
-        }
-        if (!stateMachine.transitionTo(CallState.RINGING)) return
-
-        callSource = CallSource.CELLULAR
-
-        if (settings.voiceCommandsEnabled) {
-            voiceCommands.startContinuous()
-        }
-
-        sessionJob = scope.launch {
-            // Subscribe to identity updates BEFORE resolving, so nothing
-            // published during the wait can be missed (StateFlow also
-            // replays the latest value to late subscribers).
-            launch {
-                identityManager.identity.filterNotNull().collect { updated ->
-                    if (updated.displayName != null &&
-                        updated.displayName != currentIdentity.displayName
-                    ) {
-                        Log.i(TAG, "Identity update: ${updated.displayName} (${updated.source})")
-                        currentIdentity = updated
-                    }
-                }
-            }
-
-            currentIdentity = identityManager.resolveIdentity(
-                number = number,
-                waitMs = TRUECALLER_WAIT_MS
-            )
-
-            runAnnouncementLoop()
-        }
-    }
-
-    private fun onWhatsAppRinging(intent: Intent) {
-        val callerName = intent.getStringExtra(EXTRA_CALLER_NAME)
-        val isVideo = intent.getBooleanExtra(EXTRA_IS_VIDEO, false)
-
+    private fun onRinging() {
         if (stateMachine.isRinging) return
         if (!stateMachine.transitionTo(CallState.RINGING)) return
 
-        // No voice commands for WhatsApp — no public API to act on the call.
-        callSource = if (isVideo) CallSource.WHATSAPP_VIDEO else CallSource.WHATSAPP_VOICE
-        currentIdentity = CallerIdentity(
-            number = null,
-            displayName = callerName,
-            source = if (callerName != null) IdentitySource.CONTACT else IdentitySource.UNKNOWN
-        )
+        if (settings.voiceCommandsEnabled) {
+            Log.d(TAG, "Voice commands: STARTING")
+            voiceCommands.startContinuous()
 
-        sessionJob = scope.launch {
-            runAnnouncementLoop()
-        }
-    }
-
-    // ------------------------------------------------------ announcement loop
-
-    private suspend fun runAnnouncementLoop() {
-        val maxRepeats = if (settings.repeatEnabled) settings.maxRepeats else 1
-        val intervalMs = settings.repeatIntervalSec * 1000L
-        var announcements = 0
-
-        while (scope.isActive && stateMachine.isRinging && announcements < maxRepeats) {
-            val route = audioRouter.selectRoute()
-            if (route == AudioRouter.Route.NONE) {
-                Log.w(TAG, "No route available — waiting for Bluetooth or speaker")
-                delay(ROUTE_RECHECK_MS)
-                continue
+            // If Bluetooth is connected, establish SCO so mic routes through earphones
+            if (audioRouter.isBluetoothAudioConnected()) {
+                sessionJob = scope.launch {
+                    val scoOk = audioRouter.connectBluetoothAudio()
+                    Log.d(TAG, "Bluetooth SCO for mic: $scoOk")
+                }
             }
+        }
 
-            val name = currentIdentity.displayName ?: getString(R.string.unknown_caller)
-            Log.i(TAG, "Announcing via $route: '$name' (${announcements + 1}/$maxRepeats)")
-
-            // The recognizer must not run while TTS speaks — they fight over
-            // audio focus and the recognizer dies/restarts in a visible loop.
-            voiceCommands.pause()
-            // Ducking applies ONLY while the announcement plays; full ring
-            // volume comes back the moment it ends.
-            audioRouter.beginAnnouncementWindow(route)
-            val sco = route == AudioRouter.Route.BLUETOOTH &&
-                    audioRouter.connectBluetoothAudio()
-            try {
-                announcer.announce(buildAnnouncement(name), viaBluetoothSco = sco)
-                announcements++
-            } finally {
-                if (sco) audioRouter.disconnectBluetoothAudio()
-                audioRouter.endAnnouncementWindow()
-                voiceCommands.resume()
+        // Observe listener state to update overlay icon
+        overlayStateJob = scope.launch {
+            voiceCommands.listenerState.collect { state ->
+                updateOverlayMicIcon(state)
             }
-
-            if (!stateMachine.isRinging) break
-            delay(intervalMs)
         }
-
-        // Max repeats reached: stay alive (listener keeps running) until the
-        // call is answered, rejected, or ends.
-        while (scope.isActive && stateMachine.isRinging) {
-            delay(500)
-        }
-    }
-
-    private fun buildAnnouncement(name: String): String = when (callSource) {
-        CallSource.CELLULAR -> getString(R.string.announce_incoming_call, name)
-        CallSource.WHATSAPP_VOICE -> getString(R.string.announce_whatsapp_voice, name)
-        CallSource.WHATSAPP_VIDEO -> getString(R.string.announce_whatsapp_video, name)
     }
 
     // -------------------------------------------------------- voice commands
 
     private fun onVoiceCommand(command: VoiceCommand) {
-        if (callSource != CallSource.CELLULAR) return
         if (!stateMachine.isRinging) return
 
         Log.i(TAG, "Voice command: $command")
         when (command) {
             VoiceCommand.ANSWER -> answerWithFallback(speakerAfter = false)
 
-            VoiceCommand.SPEAKER -> answerWithFallback(speakerAfter = true)
+            VoiceCommand.SPEAKER -> {
+                speakerRequested = true
+                answerWithFallback(speakerAfter = true)
+            }
 
             VoiceCommand.REJECT -> {
                 if (!telecom.rejectCall()) {
                     // API 26-27 fallback: can't end the call, silence it instead.
-                    audioRouter.silenceRinger()
+                    telecom.silenceRinger()
                 }
             }
 
-            VoiceCommand.SILENT -> audioRouter.silenceRinger()
-
-            VoiceCommand.VOLUME_UP -> audioRouter.adjustRingVolume(up = true)
-            VoiceCommand.VOLUME_DOWN -> audioRouter.adjustRingVolume(up = false)
+            VoiceCommand.SILENT -> {
+                // Silence the ringer like pressing the power button
+                telecom.silenceRinger()
+                audioRouter.silenceRinger()
+            }
         }
     }
 
@@ -251,7 +159,6 @@ class CallHandlerService : Service() {
      * The session is torn down only when the OFFHOOK broadcast confirms.
      */
     private fun answerWithFallback(speakerAfter: Boolean) {
-        announcer.stopSpeaking()
         telecom.answerCall()
         scope.launch {
             delay(ANSWER_FALLBACK_MS)
@@ -261,7 +168,9 @@ class CallHandlerService : Service() {
             }
             repeat(10) {
                 if (!stateMachine.isRinging) {
-                    audioRouter.requestSpeakerphoneOnAnswer()
+                    if (speakerAfter) {
+                        audioRouter.requestSpeakerphoneOnAnswer()
+                    }
                     return@launch
                 }
                 delay(200)
@@ -273,6 +182,15 @@ class CallHandlerService : Service() {
 
     private fun onCallAnswered() {
         if (!stateMachine.transitionTo(CallState.ANSWERED)) return
+
+        if (speakerRequested) {
+            scope.launch {
+                delay(500)
+                Log.d(TAG, "Activating speakerphone post-answer")
+                audioRouter.requestSpeakerphoneOnAnswer()
+            }
+        }
+
         stopSession()
         stopSelfSafely()
     }
@@ -284,17 +202,18 @@ class CallHandlerService : Service() {
         stopSelfSafely()
     }
 
-    /** Stop announcements, recognition, and audio changes immediately. */
+    /** Stop voice recognition and audio changes immediately. */
     private fun stopSession() {
         sessionJob?.cancel()
         sessionJob = null
+        overlayStateJob?.cancel()
+        overlayStateJob = null
         scope.coroutineContext.cancelChildren()
-        announcer.stopSpeaking()
+        Log.d(TAG, "Voice commands: STOPPING")
         voiceCommands.stopListening()
-        hideMicExemptionOverlay()
+        hideStatusOverlay()
         audioRouter.restoreAll()
-        identityManager.reset()
-        currentIdentity = CallerIdentity.unknown(null)
+        speakerRequested = false
     }
 
     private fun stopSelfSafely() {
@@ -305,48 +224,111 @@ class CallHandlerService : Service() {
 
     override fun onDestroy() {
         stopSession()
-        announcer.shutdown()
         voiceCommands.destroy()
         scope.coroutineContext[Job]?.cancel()
         super.onDestroy()
     }
 
-    // ------------------------------------------------------------ foreground
+    // --------------------------------------------------------- status overlay
+
     /**
-     * Android 14 denies the microphone FGS type (and mic input entirely)
-     * to services started from the background. A visible overlay window +
-     * SYSTEM_ALERT_WINDOW is a documented exemption, so we add an
-     * invisible 1x1 px view while ringing and remove it at teardown.
+     * Shows a small draggable floating pill overlay with:
+     * - A phone icon (app is active / listening to call state)
+     * - A mic icon that updates based on SpeechRecognizer state
+     *
+     * This overlay also satisfies the Android 14 SYSTEM_ALERT_WINDOW
+     * exemption for background-started mic foreground services.
      */
-    private fun showMicExemptionOverlay() {
+    private fun showStatusOverlay() {
         if (overlayView != null) return
         if (!Settings.canDrawOverlays(this)) {
-            Log.w(TAG, "Overlay permission missing — voice commands will be mic-blocked. " +
-                    "Grant 'Display over other apps' from the main screen.")
+            Log.w(
+                TAG, "Overlay permission missing — voice commands may be mic-blocked. " +
+                        "Grant 'Display over other apps' from the main screen."
+            )
             return
         }
+
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val view = View(this)
+        val view = LayoutInflater.from(this).inflate(R.layout.overlay_status, null)
+        micIconView = view.findViewById(R.id.overlayMicIcon)
+
         val params = WindowManager.LayoutParams(
-            1, 1,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START }
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            x = 16
+            y = 100
+        }
+
+        // Make the overlay draggable
+        view.setOnTouchListener(object : View.OnTouchListener {
+            private var initialX = 0
+            private var initialY = 0
+            private var initialTouchX = 0f
+            private var initialTouchY = 0f
+
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        // Gravity is END, so moving right means decreasing x
+                        params.x = initialX - (event.rawX - initialTouchX).toInt()
+                        params.y = initialY + (event.rawY - initialTouchY).toInt()
+                        runCatching { wm.updateViewLayout(view, params) }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+
         runCatching { wm.addView(view, params) }
             .onSuccess { overlayView = view }
             .onFailure { Log.w(TAG, "Overlay add failed: ${it.message}") }
     }
 
-    private fun hideMicExemptionOverlay() {
+    private fun hideStatusOverlay() {
         overlayView?.let { v ->
             runCatching {
                 (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v)
             }
         }
         overlayView = null
+        micIconView = null
     }
+
+    /** Update the mic icon in the overlay based on the recognizer state. */
+    private fun updateOverlayMicIcon(state: VoiceListenerState) {
+        val icon = micIconView ?: return
+        when (state) {
+            VoiceListenerState.LISTENING -> {
+                icon.setImageResource(R.drawable.ic_mic_listening)
+                icon.contentDescription = getString(R.string.overlay_mic_listening)
+            }
+            VoiceListenerState.PAUSED -> {
+                icon.setImageResource(R.drawable.ic_mic_paused)
+                icon.contentDescription = getString(R.string.overlay_mic_paused)
+            }
+            VoiceListenerState.OFF -> {
+                icon.setImageResource(R.drawable.ic_mic_off)
+                icon.contentDescription = getString(R.string.overlay_mic_off)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ foreground
+
     private fun startForegroundCompat() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -377,8 +359,8 @@ class CallHandlerService : Service() {
         )
         return NotificationCompat.Builder(this, App.CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notif_announcing_title))
-            .setContentText(getString(R.string.notif_announcing_text))
+            .setContentTitle(getString(R.string.notif_title))
+            .setContentText(getString(R.string.notif_text))
             .setOngoing(true)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -391,17 +373,8 @@ class CallHandlerService : Service() {
         const val ACTION_RINGING = "com.callhandler.action.RINGING"
         const val ACTION_ANSWERED = "com.callhandler.action.ANSWERED"
         const val ACTION_ENDED = "com.callhandler.action.ENDED"
-        const val ACTION_TRUECALLER_UPDATE = "com.callhandler.action.TRUECALLER_UPDATE"
-        const val ACTION_WHATSAPP_RINGING = "com.callhandler.action.WHATSAPP_RINGING"
-        const val ACTION_WHATSAPP_DISMISSED = "com.callhandler.action.WHATSAPP_DISMISSED"
-
-        const val EXTRA_NUMBER = "extra_number"
-        const val EXTRA_CALLER_NAME = "extra_caller_name"
-        const val EXTRA_IS_VIDEO = "extra_is_video"
 
         private const val NOTIFICATION_ID = 42
-        private const val TRUECALLER_WAIT_MS = 2500L
-        private const val ROUTE_RECHECK_MS = 1500L
         private const val ANSWER_FALLBACK_MS = 700L
     }
 }
