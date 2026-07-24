@@ -45,4 +45,6 @@
     <string name="overlay_mic_listening">Mic: listening for commands</string>
     <string name="overlay_mic_paused">Mic: paused</string>
     <string name="overlay_mic_off">Mic: off</string>
+    <string name="overlay_mic_blocked">Mic: blocked by system</string>
+    <string name="overlay_debug_text_desc">Speech recognizer output</string>
 </resources>

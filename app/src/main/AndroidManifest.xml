@@ -55,6 +55,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Invisible trampoline: starts FGS from foreground context
+             to guarantee MICROPHONE type on Android 14+ -->
+        <activity
+            android:name=".core.FgsStarterActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CallHandler.Transparent"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="" />
+
         <!-- Voice command listener + BT announcement foreground service -->
         <service
             android:name=".core.CallHandlerService"

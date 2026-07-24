@@ -8,6 +8,12 @@ import android.util.Log
 
 /**
  * Receives PHONE_STATE broadcasts and forwards them to [CallHandlerService].
+ *
+ * For RINGING events, the service is started via [FgsStarterActivity] — a
+ * transparent trampoline activity that briefly makes the app TOP. This
+ * guarantees the foreground service can start with MICROPHONE type on
+ * Android 14+, even on self-calls where the broadcast-receiver context
+ * alone doesn't provide sufficient FGS type exemptions.
  */
 class CallStateReceiver : BroadcastReceiver() {
 
@@ -17,26 +23,44 @@ class CallStateReceiver : BroadcastReceiver() {
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
         val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
 
-        val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
-            action = when (state) {
-                TelephonyManager.EXTRA_STATE_RINGING -> CallHandlerService.ACTION_RINGING
-                TelephonyManager.EXTRA_STATE_OFFHOOK -> CallHandlerService.ACTION_ANSWERED
-                TelephonyManager.EXTRA_STATE_IDLE -> CallHandlerService.ACTION_ENDED
-                else -> return
+        when (state) {
+            TelephonyManager.EXTRA_STATE_RINGING -> {
+                // Start via trampoline activity so the app is TOP when
+                // startForegroundService is called → FGS mic type is granted.
+                val trampolineIntent = FgsStarterActivity.createIntent(
+                    context = context,
+                    serviceAction = CallHandlerService.ACTION_RINGING,
+                    number = number
+                )
+                runCatching { context.startActivity(trampolineIntent) }
+                    .onFailure {
+                        // Fallback: try starting the service directly
+                        Log.w(TAG, "Trampoline activity failed, falling back to direct start: ${it.message}")
+                        val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
+                            action = CallHandlerService.ACTION_RINGING
+                            if (number != null) putExtra(CallHandlerService.EXTRA_NUMBER, number)
+                        }
+                        runCatching { context.startForegroundService(serviceIntent) }
+                            .onFailure { e2 ->
+                                Log.e(TAG, "Foreground service start failed: ${e2.message}. " +
+                                        "Check battery optimization and background execution restrictions.")
+                            }
+                    }
             }
-            if (number != null) {
-                putExtra(CallHandlerService.EXTRA_NUMBER, number)
-            }
-        }
 
-        if (state == TelephonyManager.EXTRA_STATE_RINGING) {
-            runCatching { context.startForegroundService(serviceIntent) }
-                .onFailure {
-                    Log.e(TAG, "Foreground service start failed: ${it.message}. " +
-                            "Check battery optimization and background execution restrictions.")
+            TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
+                    action = CallHandlerService.ACTION_ANSWERED
                 }
-        } else {
-            runCatching { context.startService(serviceIntent) }
+                runCatching { context.startService(serviceIntent) }
+            }
+
+            TelephonyManager.EXTRA_STATE_IDLE -> {
+                val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
+                    action = CallHandlerService.ACTION_ENDED
+                }
+                runCatching { context.startService(serviceIntent) }
+            }
         }
     }
 

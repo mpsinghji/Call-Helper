@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.callhandler.service.App
 import com.callhandler.service.R
@@ -58,8 +59,11 @@ class CallHandlerService : Service() {
     private var sessionJob: Job? = null
     private var overlayView: View? = null
     private var micIconView: ImageView? = null
+    private var debugTextView: TextView? = null
     private var overlayStateJob: Job? = null
+    private var heardTextJob: Job? = null
     private var speakerRequested = false
+    private var fgsMicGranted = false
     private var currentIdentity: CallerIdentity = CallerIdentity.unknown(null)
 
     override fun onCreate() {
@@ -128,6 +132,13 @@ class CallHandlerService : Service() {
         // Observe listener state for overlay icon
         overlayStateJob = scope.launch {
             voiceCommands.listenerState.collect { updateOverlayMicIcon(it) }
+        }
+
+        // Observe heard text for debug display in overlay
+        heardTextJob = scope.launch {
+            voiceCommands.lastHeardText.collect { text ->
+                debugTextView?.text = text
+            }
         }
 
         // Session: identity resolution + BT announcement
@@ -275,6 +286,8 @@ class CallHandlerService : Service() {
         sessionJob = null
         overlayStateJob?.cancel()
         overlayStateJob = null
+        heardTextJob?.cancel()
+        heardTextJob = null
         scope.coroutineContext.cancelChildren()
         announcer.stopSpeaking()
         voiceCommands.stopListening()
@@ -311,6 +324,12 @@ class CallHandlerService : Service() {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val view = LayoutInflater.from(this).inflate(R.layout.overlay_status, null)
         micIconView = view.findViewById(R.id.overlayMicIcon)
+        debugTextView = view.findViewById(R.id.overlayDebugText)
+
+        // Show mic-blocked warning immediately if FGS mic type failed
+        if (!fgsMicGranted) {
+            debugTextView?.text = "⚠ Mic unavailable"
+        }
 
         val (savedX, savedY) = loadOverlayPosition()
 
@@ -370,6 +389,7 @@ class CallHandlerService : Service() {
         }
         overlayView = null
         micIconView = null
+        debugTextView = null
     }
 
     private fun updateOverlayMicIcon(state: VoiceListenerState) {
@@ -414,8 +434,12 @@ class CallHandlerService : Service() {
             } else 0
             try {
                 startForeground(NOTIFICATION_ID, notification, phone or mic)
+                fgsMicGranted = true
+                Log.i(TAG, "FGS started with phoneCall|microphone type")
             } catch (e: Exception) {
+                fgsMicGranted = false
                 Log.w(TAG, "FGS with mic type failed: ${e.message}; retrying without")
+                Log.e(TAG, "\u26a0 Voice commands will NOT work this session \u2014 mic FGS type denied by system")
                 try {
                     startForeground(NOTIFICATION_ID, notification, phone)
                 } catch (e2: Exception) {
@@ -423,6 +447,7 @@ class CallHandlerService : Service() {
                 }
             }
         } else {
+            fgsMicGranted = true
             startForeground(NOTIFICATION_ID, notification)
         }
     }

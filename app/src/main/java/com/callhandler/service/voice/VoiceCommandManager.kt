@@ -55,6 +55,10 @@ class VoiceCommandManager(
     /** Observable listener state for the overlay UI. */
     val listenerState: StateFlow<VoiceListenerState> = _listenerState
 
+    private val _lastHeardText = MutableStateFlow("")
+    /** What the speech recognizer last heard — for overlay debug display. */
+    val lastHeardText: StateFlow<String> = _lastHeardText
+
     private var sessionId = 0
     private var consecutiveErrors = 0
     private val restartRunnable = Runnable { beginListening() }
@@ -68,11 +72,12 @@ class VoiceCommandManager(
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-        // Long silence timeouts so each session stays open longer,
-        // reducing the number of restart cycles.
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 8000L)
+        // Prefer offline recognition for lower latency
+        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        // Shorter silence timeouts → faster cycling → catches commands sooner
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 5000L)
     }
 
     /** Start the continuous listener (idempotent). */
@@ -139,12 +144,14 @@ class VoiceCommandManager(
 
         Log.d(TAG, "[$sid] -> STARTING recognizer")
         state = State.STARTING
+        _lastHeardText.value = "🎤 Starting..."
 
         runCatching {
             recognizer?.setRecognitionListener(createListener(sid))
             recognizer?.startListening(recognizerIntent)
         }.onFailure { e ->
             Log.e(TAG, "[$sid] startListening failed: ${e.message}")
+            _lastHeardText.value = "❌ Mic error: ${e.message?.take(40)}"
             state = State.IDLE
             _listenerState.value = VoiceListenerState.OFF
             if (recreateRecognizer()) {
@@ -202,6 +209,7 @@ class VoiceCommandManager(
             if (state != State.STARTING) return
             state = State.LISTENING
             _listenerState.value = VoiceListenerState.LISTENING
+            _lastHeardText.value = "🎤 Listening..."
             consecutiveErrors = 0
             Log.d(TAG, "[$sid] READY — listening")
         }
@@ -235,13 +243,15 @@ class VoiceCommandManager(
 
             when (error) {
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                    Log.e(TAG, "[$sid] $name — stopping")
+                    Log.e(TAG, "[$sid] $name — stopping (FGS mic type likely missing)")
+                    _lastHeardText.value = "⚠ Mic permission blocked"
                     stopListening()
                 }
                 // Benign "nothing heard" — restart immediately
                 SpeechRecognizer.ERROR_NO_MATCH,
                 SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
                     consecutiveErrors++
+                    _lastHeardText.value = "🎤 (silence — restarting)"
                     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
                         Log.w(TAG, "[$sid] $name ($consecutiveErrors consecutive) — recreating")
                         consecutiveErrors = 0
@@ -252,14 +262,21 @@ class VoiceCommandManager(
                 }
                 // Critical — need a clean slate
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
-                SpeechRecognizer.ERROR_CLIENT,
-                SpeechRecognizer.ERROR_AUDIO -> {
+                SpeechRecognizer.ERROR_CLIENT -> {
                     Log.w(TAG, "[$sid] $name — recreating recognizer")
+                    _lastHeardText.value = "⚠ $name — retrying"
+                    consecutiveErrors = 0
+                    if (recreateRecognizer()) restartAfter(RETRY_SLOW_MS)
+                }
+                SpeechRecognizer.ERROR_AUDIO -> {
+                    Log.e(TAG, "[$sid] $name — mic may be blocked by FGS type restriction")
+                    _lastHeardText.value = "⚠ Audio error — mic blocked?"
                     consecutiveErrors = 0
                     if (recreateRecognizer()) restartAfter(RETRY_SLOW_MS)
                 }
                 else -> {
                     Log.w(TAG, "[$sid] $name")
+                    _lastHeardText.value = "⚠ $name"
                     consecutiveErrors = 0
                     restartAfter(RETRY_FAST_MS)
                 }
@@ -273,6 +290,9 @@ class VoiceCommandManager(
                 ?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
             Log.d(TAG, "[$sid] RESULTS: $phrases")
 
+            if (phrases.isNotEmpty()) {
+                _lastHeardText.value = "✅ " + phrases.first()
+            }
             handlePhrases(phrases)
 
             // Restart immediately for continuous listening
@@ -292,6 +312,7 @@ class VoiceCommandManager(
 
             if (phrases.isNotEmpty()) {
                 Log.d(TAG, "[$sid] PARTIAL: $phrases")
+                _lastHeardText.value = "… " + phrases.first()
                 // Act on partial match immediately; do NOT cancel the
                 // recognizer — let it finish naturally. Debounce prevents
                 // the same command from firing again in onResults.
@@ -326,7 +347,7 @@ class VoiceCommandManager(
         private const val RETRY_SLOW_MS = 1200L        // after recreating recognizer
         private const val RESUME_DELAY_BT_MS = 500L    // after TTS via Bluetooth
         private const val RESUME_DELAY_SPEAKER_MS = 200L
-        private const val COMMAND_DEBOUNCE_MS = 2000L
+        private const val COMMAND_DEBOUNCE_MS = 1500L  // reduced from 2000 for faster response
         private const val MAX_CONSECUTIVE_ERRORS = 5
     }
 }
