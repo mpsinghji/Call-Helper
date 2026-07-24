@@ -2,6 +2,8 @@ package com.callhandler.service.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -16,9 +18,11 @@ import kotlin.coroutines.resume
 /**
  * Speaks caller announcements through Bluetooth SCO only.
  *
- * Uses USAGE_VOICE_COMMUNICATION so the TTS output routes through
- * the Bluetooth phone-call audio channel (SCO) and never to the
- * loudspeaker.
+ * Uses USAGE_VOICE_COMMUNICATION audio attributes AND passes
+ * STREAM_VOICE_CALL in the speak() Bundle — belt-and-suspenders
+ * to ensure TTS routes through the BT phone-call channel on all
+ * devices. The caller must have called AudioRouter.prepareForAnnouncement()
+ * (which sets MODE_IN_COMMUNICATION) before invoking [announce].
  */
 class AnnouncementManager(
     context: Context,
@@ -28,12 +32,21 @@ class AnnouncementManager(
     private val ttsReady = CompletableDeferred<Boolean>()
     private val utteranceSeq = AtomicInteger()
 
-    /** Audio attributes that route through the SCO / phone-call channel. */
+    /** Audio attributes for the SCO / phone-call channel. */
     private val scoAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
         .build()
+
+    /**
+     * Bundle params passed to speak() to force STREAM_VOICE_CALL.
+     * Some TTS engines ignore setAudioAttributes() and only respect
+     * the legacy stream parameter in the Bundle.
+     */
+    @Suppress("DEPRECATION")
+    private val speakParams = Bundle().apply {
+        putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_VOICE_CALL)
+    }
 
     private lateinit var tts: TextToSpeech
 
@@ -57,9 +70,9 @@ class AnnouncementManager(
     /**
      * Announce [text] through Bluetooth SCO.
      *
-     * Caller must have connected SCO before calling this.
-     * Always uses USAGE_VOICE_COMMUNICATION so output goes through the
-     * phone-call BT channel, never the loudspeaker.
+     * Prerequisites (caller must ensure):
+     * - SCO is connected via AudioRouter.connectBluetoothAudio()
+     * - AudioRouter.prepareForAnnouncement() was called (sets MODE_IN_COMMUNICATION)
      */
     suspend fun announce(text: String) {
         if (!ttsReady.await()) {
@@ -70,6 +83,7 @@ class AnnouncementManager(
         tts.setAudioAttributes(scoAttributes)
         tts.setSpeechRate(settings.speechRatePct / 100f)
 
+        Log.d(TAG, "Speaking: '$text'")
         withTimeoutOrNull(MAX_UTTERANCE_MS) {
             speakAndAwait(text)
         }
@@ -80,26 +94,34 @@ class AnnouncementManager(
             val id = "chs-" + utteranceSeq.incrementAndGet()
 
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
+                override fun onStart(utteranceId: String?) {
+                    Log.d(TAG, "TTS started: $utteranceId")
+                }
 
                 override fun onDone(utteranceId: String?) {
+                    Log.d(TAG, "TTS done: $utteranceId")
                     if (utteranceId == id && cont.isActive) cont.resume(Unit)
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
+                    Log.w(TAG, "TTS error (deprecated): $utteranceId")
                     if (utteranceId == id && cont.isActive) cont.resume(Unit)
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
-                    Log.w(TAG, "TTS error $errorCode")
+                    Log.w(TAG, "TTS error $errorCode for $utteranceId")
                     if (utteranceId == id && cont.isActive) cont.resume(Unit)
                 }
             })
 
-            val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+            // Pass speakParams Bundle with STREAM_VOICE_CALL to ensure
+            // the audio routes through the correct stream.
+            val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, speakParams, id)
+            Log.d(TAG, "tts.speak() result = $result (SUCCESS=0)")
 
             if (result != TextToSpeech.SUCCESS && cont.isActive) {
+                Log.w(TAG, "tts.speak() failed immediately with result=$result")
                 cont.resume(Unit)
             }
 

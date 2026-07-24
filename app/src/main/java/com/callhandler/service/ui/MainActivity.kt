@@ -114,12 +114,11 @@ class MainActivity : AppCompatActivity() {
             }
 
             try {
-                // Note: reduceRingtoneForAnnouncement() won't affect anything here
-                // since there's no active call/ringtone during testing
-                router.setAnnouncementVolume(settings.announcementVolumePct)
+                // Set MODE_IN_COMMUNICATION + VOICE_CALL volume (routes TTS through BT)
+                router.prepareForAnnouncement(settings.announcementVolumePct)
                 tts.announce(getString(R.string.test_bt_announcement_text))
             } finally {
-                router.restoreBluetoothVolume()
+                router.restoreAfterAnnouncement()
                 router.disconnectBluetoothAudio()
             }
 
