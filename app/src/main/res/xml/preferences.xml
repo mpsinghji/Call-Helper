@@ -22,6 +22,16 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="@string/pref_cat_voip">
+
+        <SwitchPreferenceCompat
+            android:key="pref_voip_announcement_enabled"
+            android:title="@string/pref_voip_announcement_title"
+            android:summary="@string/pref_voip_announcement_summary"
+            android:defaultValue="true" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/pref_cat_audio">
 
         <!-- TTS speech rate: 50..200 mapped to 0.5x..2.0x -->
@@ -33,14 +43,14 @@
             app:min="50"
             app:showSeekBarValue="true" />
 
-        <!-- Announcement volume: 50..200 percent of VOICE_CALL max -->
+        <!-- Announcement volume: 100..200 percent of VOICE_CALL max -->
         <SeekBarPreference
             android:key="pref_announcement_volume_pct"
             android:title="@string/pref_announcement_volume_title"
             android:summary="@string/pref_announcement_volume_summary"
             android:defaultValue="200"
             android:max="200"
-            app:min="50"
+            app:min="100"
             app:showSeekBarValue="true" />
 
     </PreferenceCategory>

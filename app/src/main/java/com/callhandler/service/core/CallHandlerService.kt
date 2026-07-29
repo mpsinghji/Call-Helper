@@ -89,18 +89,30 @@ class CallHandlerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand: action=${intent?.action}")
         when (intent?.action) {
             ACTION_RINGING -> {
+                Log.d(TAG, "ACTION_RINGING received")
                 startForegroundCompat()
+                Log.d(TAG, "FGS started, now showing overlay...")
                 showStatusOverlay()
+                Log.d(TAG, "Overlay show attempted, now processing ringing...")
                 onRinging(intent.getStringExtra(EXTRA_NUMBER))
             }
 
-            ACTION_ANSWERED -> onCallAnswered()
-            ACTION_ENDED -> onCallEnded()
+            ACTION_ANSWERED -> {
+                Log.d(TAG, "ACTION_ANSWERED received")
+                onCallAnswered()
+            }
+            
+            ACTION_ENDED -> {
+                Log.d(TAG, "ACTION_ENDED received")
+                onCallEnded()
+            }
 
             ACTION_TRUECALLER_UPDATE -> {
                 val name = intent.getStringExtra(EXTRA_CALLER_NAME)
+                Log.d(TAG, "ACTION_TRUECALLER_UPDATE: name=$name")
                 if (name != null) identityManager.onTruecallerName(name)
             }
         }
@@ -315,23 +327,36 @@ class CallHandlerService : Service() {
     // --------------------------------------------------------- status overlay
 
     private fun showStatusOverlay() {
-        if (overlayView != null) return
-        if (!Settings.canDrawOverlays(this)) {
-            Log.w(TAG, "Overlay permission missing")
+        Log.d(TAG, "showStatusOverlay() called")
+        
+        if (overlayView != null) {
+            Log.d(TAG, "Overlay already exists, skipping")
             return
         }
+        
+        if (!Settings.canDrawOverlays(this)) {
+            Log.e(TAG, "⚠️ OVERLAY PERMISSION DENIED - Check Settings > Apps > Call Handler > Display over other apps")
+            return
+        }
+        
+        Log.d(TAG, "Overlay permission: OK")
 
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        Log.d(TAG, "Inflating overlay layout...")
         val view = LayoutInflater.from(this).inflate(R.layout.overlay_status, null)
         micIconView = view.findViewById(R.id.overlayMicIcon)
         debugTextView = view.findViewById(R.id.overlayDebugText)
+        
+        Log.d(TAG, "Overlay views: micIcon=${micIconView != null}, debugText=${debugTextView != null}")
 
         // Show mic-blocked warning immediately if FGS mic type failed
         if (!fgsMicGranted) {
             debugTextView?.text = "⚠ Mic unavailable"
+            Log.d(TAG, "Set mic warning text (FGS mic not granted)")
         }
 
         val (savedX, savedY) = loadOverlayPosition()
+        Log.d(TAG, "Loaded overlay position: x=$savedX, y=$savedY")
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -376,15 +401,27 @@ class CallHandlerService : Service() {
             }
         })
 
+        Log.d(TAG, "Adding overlay to WindowManager...")
         runCatching { wm.addView(view, params) }
-            .onSuccess { overlayView = view }
-            .onFailure { Log.w(TAG, "Overlay add failed: ${it.message}") }
+            .onSuccess { 
+                overlayView = view
+                Log.i(TAG, "✓✓✓ OVERLAY SUCCESSFULLY DISPLAYED at ($savedX, $savedY) ✓✓✓")
+            }
+            .onFailure { e ->
+                Log.e(TAG, "✗✗✗ OVERLAY ADD FAILED: ${e.message} ✗✗✗", e)
+            }
     }
 
     private fun hideStatusOverlay() {
+        Log.d(TAG, "hideStatusOverlay() called, overlayView=${overlayView != null}")
         overlayView?.let { v ->
+            Log.d(TAG, "Removing overlay from WindowManager...")
             runCatching {
                 (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v)
+            }.onSuccess {
+                Log.d(TAG, "✓ Overlay removed successfully")
+            }.onFailure { e ->
+                Log.w(TAG, "✗ Overlay removal failed: ${e.message}")
             }
         }
         overlayView = null

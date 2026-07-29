@@ -71,6 +71,12 @@
             android:exported="false"
             android:foregroundServiceType="phoneCall|microphone" />
 
+        <!-- VoIP call announcement service (WhatsApp, Instagram, etc.) -->
+        <service
+            android:name=".audio.VoipAnnouncementService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall" />
+
         <!-- Truecaller caller-ID notification listener -->
         <service
             android:name=".identity.CallNotificationListener"

@@ -5,34 +5,80 @@ import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.callhandler.service.audio.VoipAnnouncementService
 import com.callhandler.service.core.CallHandlerService
+import com.callhandler.service.settings.SettingsManager
 
 /**
- * Listens for **Truecaller** incoming-call identification notifications
- * and forwards the identified caller name to [CallHandlerService].
- *
- * Non-call Truecaller notifications (profile views, promotions, etc.)
- * are filtered out.
- * 
- * **VoIP/Messaging app calls are ignored** - WhatsApp, Telegram, Discord,
- * Skype, etc. calls are not announced. Only cellular phone calls are announced.
+ * Listens for:
+ * 1. **Truecaller** incoming-call identification → forwards to [CallHandlerService]
+ * 2. **VoIP app** incoming calls (WhatsApp, Instagram, Snapchat, etc.)
+ *    → announces through Bluetooth via [VoipAnnouncementService]
  */
 class CallNotificationListener : NotificationListenerService() {
 
+    private val settings by lazy { SettingsManager(this) }
+
+    /**
+     * Tracks recently announced VoIP calls to avoid duplicate announcements
+     * for the same notification being re-posted.
+     * Key = "${packageName}:${notification_key}", expires naturally on removal.
+     */
+    private val announcedVoipCalls = mutableSetOf<String>()
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Explicitly block VoIP/messaging apps - we only want cellular calls
-        if (sbn.packageName in BLOCKED_VOIP_PACKAGES) {
-            Log.d(TAG, "Ignoring VoIP/messaging app: ${sbn.packageName}")
+        // 1. Check for VoIP incoming call
+        if (sbn.packageName in VoipCallDetector.KNOWN_PACKAGES) {
+            handleVoipNotification(sbn)
             return
         }
-        
-        if (sbn.packageName !in TRUECALLER_PACKAGES) return
-        handleTruecaller(sbn)
+
+        // 2. Check for Truecaller caller-ID
+        if (sbn.packageName in TRUECALLER_PACKAGES) {
+            handleTruecaller(sbn)
+            return
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        // No action needed — only Truecaller is observed and it's one-way.
+        // Clean up tracking when notification is dismissed (call ended/missed)
+        if (sbn.packageName in VoipCallDetector.KNOWN_PACKAGES) {
+            announcedVoipCalls.remove(sbn.key)
+        }
     }
+
+    // ------------------------------------------------------------ VoIP calls
+
+    private fun handleVoipNotification(sbn: StatusBarNotification) {
+        if (!settings.voipAnnouncementEnabled) return
+
+        val extras = sbn.notification.extras
+        val notifTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val notifText = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        
+        Log.d(TAG, "VoIP notification from ${sbn.packageName}: title='$notifTitle', text='$notifText', key=${sbn.key}")
+
+        // Avoid duplicate announcement for the same notification
+        if (sbn.key in announcedVoipCalls) {
+            Log.d(TAG, "Already announced this notification key: ${sbn.key}")
+            return
+        }
+
+        val callInfo = VoipCallDetector.detect(sbn)
+        if (callInfo == null) {
+            Log.d(TAG, "Not a VoIP call: ${sbn.packageName} (${getNotifSummary(sbn)})")
+            return
+        }
+
+        // Mark as announced before starting the service
+        announcedVoipCalls.add(sbn.key)
+
+        val announcementText = callInfo.toAnnouncementText()
+        Log.i(TAG, "VoIP call detected: $announcementText [key=${sbn.key}]")
+        VoipAnnouncementService.announce(this, announcementText)
+    }
+
+    // ----------------------------------------------------------- Truecaller
 
     private fun handleTruecaller(sbn: StatusBarNotification) {
         val extras = sbn.notification.extras
@@ -80,36 +126,19 @@ class CallNotificationListener : NotificationListenerService() {
         return candidate
     }
 
+    // ---------------------------------------------------------------- utils
+
+    private fun getNotifSummary(sbn: StatusBarNotification): String {
+        val extras = sbn.notification.extras
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        return "title='$title', text='$text', category=${sbn.notification.category}"
+    }
+
     companion object {
         private const val TAG = "CallNotifListener"
 
         private val TRUECALLER_PACKAGES = setOf("com.truecaller")
-
-        /**
-         * VoIP and messaging apps to explicitly block.
-         * We only want cellular phone calls, not app-based calls.
-         */
-        private val BLOCKED_VOIP_PACKAGES = setOf(
-            "com.whatsapp",              // WhatsApp
-            "com.whatsapp.w4b",          // WhatsApp Business
-            "org.telegram.messenger",    // Telegram
-            "com.telegram.messenger.web", // Telegram Web
-            "com.skype.raider",          // Skype
-            "com.discord",               // Discord
-            "us.zoom.videomeetings",     // Zoom
-            "com.microsoft.teams",       // Microsoft Teams
-            "com.google.android.apps.tachyon", // Google Duo/Meet
-            "com.facebook.orca",         // Facebook Messenger
-            "com.viber.voip",            // Viber
-            "jp.naver.line.android",     // LINE
-            "com.imo.android.imoim",     // imo
-            "com.snapchat.android",      // Snapchat
-            "kik.android",               // Kik
-            "com.instagram.android",     // Instagram
-            "com.twitter.android",       // Twitter/X
-            "com.google.android.apps.googlevoice", // Google Voice
-            "com.rebtel.client"          // Rebtel
-        )
 
         private val INCOMING_CALL_HINTS = listOf(
             "incoming call", "identified call", "calling", "is calling",
@@ -120,7 +149,9 @@ class CallNotificationListener : NotificationListenerService() {
             "viewed your profile", "profile view", "premium", "upgrade",
             "offer", "backup", "back up", "stats", "statistics",
             "who searched", "searched for you", "spam report", "digest",
-            "missed call", "what's new", "verify", "sale", "discount"
+            "missed call", "what's new", "verify", "sale", "discount",
+            "missed video call", "missed voice call", "call ended", 
+            "declined", "busy", "unavailable", "not answered"
         )
     }
 }

@@ -11,6 +11,10 @@
     <string name="unknown_caller">Unknown caller</string>
     <string name="announce_incoming_call">Incoming call from %1$s</string>
 
+    <!-- VoIP announcement -->
+    <string name="voip_notif_title">Announcing VoIP call</string>
+    <string name="voip_notif_text">Announcing incoming call through Bluetooth</string>
+
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="pref_cat_voice">Voice commands</string>
@@ -22,7 +26,11 @@
     <string name="pref_cat_audio">Audio</string>
     <string name="pref_speech_rate_title">Speech rate</string>
     <string name="pref_announcement_volume_title">Announcement volume</string>
-    <string name="pref_announcement_volume_summary">Bluetooth earphone volume (50–200%, ringtone muted during announcement)</string>
+    <string name="pref_announcement_volume_summary">Bluetooth earphone volume (100–200%, ringtone muted during announcement)</string>
+
+    <string name="pref_cat_voip">VoIP calls</string>
+    <string name="pref_voip_announcement_title">Announce VoIP calls</string>
+    <string name="pref_voip_announcement_summary">Announce WhatsApp, Instagram, Snapchat, Telegram, and other app calls through Bluetooth</string>
 
     <!-- Permissions -->
     <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.\n\nNotification access is needed for Truecaller caller-ID announcements through Bluetooth earphones.</string>

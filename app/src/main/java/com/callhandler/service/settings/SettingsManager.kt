@@ -24,14 +24,19 @@ class SettingsManager(context: Context) {
     val speechRatePct: Int
         get() = prefs.getInt(KEY_SPEECH_RATE, 100).coerceIn(50, 200)
 
-    /** Announcement volume percent of the VOICE_CALL stream max (50..200). */
+    /** Announcement volume percent of the VOICE_CALL stream max (100..200). */
     val announcementVolumePct: Int
-        get() = prefs.getInt(KEY_ANNOUNCEMENT_VOLUME, 200).coerceIn(50, 200)
+        get() = prefs.getInt(KEY_ANNOUNCEMENT_VOLUME, 200).coerceIn(100, 200)
+
+    /** Announce VoIP calls (WhatsApp, Instagram, etc.) through Bluetooth. */
+    val voipAnnouncementEnabled: Boolean
+        get() = prefs.getBoolean(KEY_VOIP_ANNOUNCEMENT, true)
 
     companion object {
         const val KEY_VOICE_COMMANDS = "pref_voice_commands_enabled"
         const val KEY_ANNOUNCEMENT = "pref_announcement_enabled"
         const val KEY_SPEECH_RATE = "pref_speech_rate_pct"
         const val KEY_ANNOUNCEMENT_VOLUME = "pref_announcement_volume_pct"
+        const val KEY_VOIP_ANNOUNCEMENT = "pref_voip_announcement_enabled"
     }
 }

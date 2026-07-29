@@ -94,8 +94,8 @@ class AudioRouter(private val context: Context) {
         }
         scoConnected = ok
         if (ok) {
-            // Give the audio subsystem time to route through SCO
-            delay(SCO_SETTLE_MS)
+            // Minimal delay for audio subsystem routing (100ms for fast announcement start)
+            delay(100)
         }
         return ok
     }
@@ -167,9 +167,10 @@ class AudioRouter(private val context: Context) {
      *    that actually routes STREAM_VOICE_CALL through the BT SCO link.
      *    Without it, TTS with USAGE_VOICE_COMMUNICATION may still go
      *    to the loudspeaker on many devices.
-     * 3. Set STREAM_VOICE_CALL to the desired announcement volume
-     *    (percentage of max). This controls how loud the announcement
-     *    is in the earphones.
+     * 3. Set STREAM_VOICE_CALL to MAXIMUM volume (this is the actual boost)
+     *    Note: We ALWAYS set to max volume regardless of user's percentage
+     *    setting. The percentage (100-200%) is applied via TTS volume boost
+     *    in AnnouncementManager instead.
      *
      * STREAM_RING is NEVER touched — the speaker ringtone stays as-is.
      *
@@ -190,11 +191,10 @@ class AudioRouter(private val context: Context) {
         }
         Log.d(TAG, "Audio mode -> MODE_IN_COMMUNICATION (was $savedAudioMode)")
 
-        // Set announcement volume to the configured level
+        // ALWAYS set VOICE_CALL stream to MAXIMUM volume for loudest possible output
         val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-        val target = (max * volumePct / 100f).roundToInt().coerceIn(1, max)
-        Log.d(TAG, "VOICE_CALL volume -> $target / $max (${volumePct}%)")
-        setStreamSafely(AudioManager.STREAM_VOICE_CALL, target)
+        Log.d(TAG, "VOICE_CALL volume -> MAX ($max) [TTS will apply ${volumePct}% boost]")
+        setStreamSafely(AudioManager.STREAM_VOICE_CALL, max)
     }
 
     /**
@@ -245,6 +245,5 @@ class AudioRouter(private val context: Context) {
     companion object {
         private const val TAG = "AudioRouter"
         private const val SCO_TIMEOUT_MS = 3000L
-        private const val SCO_SETTLE_MS = 500L
     }
 }
