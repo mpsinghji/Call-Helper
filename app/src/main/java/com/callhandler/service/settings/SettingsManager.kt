@@ -32,11 +32,16 @@ class SettingsManager(context: Context) {
     val voipAnnouncementEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOIP_ANNOUNCEMENT, true)
 
+    /** Temporarily set media volume to device maximum during announcements. */
+    val maxVolumeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_MAX_VOLUME, true)
+
     companion object {
         const val KEY_VOICE_COMMANDS = "pref_voice_commands_enabled"
         const val KEY_ANNOUNCEMENT = "pref_announcement_enabled"
         const val KEY_SPEECH_RATE = "pref_speech_rate_pct"
         const val KEY_ANNOUNCEMENT_VOLUME = "pref_announcement_volume_pct"
         const val KEY_VOIP_ANNOUNCEMENT = "pref_voip_announcement_enabled"
+        const val KEY_MAX_VOLUME = "pref_max_volume_enabled"
     }
 }

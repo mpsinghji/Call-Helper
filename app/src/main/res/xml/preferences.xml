@@ -53,6 +53,12 @@
             app:min="100"
             app:showSeekBarValue="true" />
 
+        <SwitchPreferenceCompat
+            android:key="pref_max_volume_enabled"
+            android:title="@string/pref_max_volume_title"
+            android:summary="@string/pref_max_volume_summary"
+            android:defaultValue="true" />
+
     </PreferenceCategory>
 
 </PreferenceScreen>

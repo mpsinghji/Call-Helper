@@ -115,7 +115,10 @@ class MainActivity : AppCompatActivity() {
 
             try {
                 // Set MODE_IN_COMMUNICATION + VOICE_CALL volume (routes TTS through BT)
-                router.prepareForAnnouncement(settings.announcementVolumePct)
+                router.prepareForAnnouncement(
+                    settings.announcementVolumePct,
+                    maxVolume = settings.maxVolumeEnabled
+                )
                 tts.announce(getString(R.string.test_bt_announcement_text))
             } finally {
                 router.restoreAfterAnnouncement()

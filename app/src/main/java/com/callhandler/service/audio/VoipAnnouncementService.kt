@@ -104,7 +104,10 @@ class VoipAnnouncementService : Service() {
         Log.i(TAG, "Announcing VoIP: '$text' at ${settings.announcementVolumePct}% volume")
 
         try {
-            audioRouter.prepareForAnnouncement(settings.announcementVolumePct)
+            audioRouter.prepareForAnnouncement(
+                settings.announcementVolumePct,
+                maxVolume = settings.maxVolumeEnabled
+            )
             announcer.announce(text)
         } finally {
             // CRITICAL: Fully restore audio state immediately after announcement

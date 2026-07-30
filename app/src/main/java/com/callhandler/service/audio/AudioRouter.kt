@@ -10,7 +10,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
@@ -19,7 +21,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
-import kotlin.math.roundToInt
 
 /**
  * Bluetooth SCO management and call-audio helpers.
@@ -44,7 +45,9 @@ class AudioRouter(private val context: Context) {
 
     private var scoConnected = false
     private var savedVoiceCallVolume = -1
+    private var savedMediaVolume = -1
     private var savedAudioMode = -1
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     fun isBluetoothAudioConnected(): Boolean {
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -162,44 +165,56 @@ class AudioRouter(private val context: Context) {
     /**
      * Prepare the audio subsystem for a BT announcement:
      *
-     * 1. Save the current audio mode and VOICE_CALL volume
-     * 2. Switch to MODE_IN_COMMUNICATION — this is the critical step
-     *    that actually routes STREAM_VOICE_CALL through the BT SCO link.
-     *    Without it, TTS with USAGE_VOICE_COMMUNICATION may still go
-     *    to the loudspeaker on many devices.
-     * 3. Set STREAM_VOICE_CALL to MAXIMUM volume (this is the actual boost)
-     *    Note: We ALWAYS set to max volume regardless of user's percentage
-     *    setting. The percentage (100-200%) is applied via TTS volume boost
-     *    in AnnouncementManager instead.
+     * 1. Request audio focus (GAIN_TRANSIENT) to prevent other apps from
+     *    being ducked by the system while MODE_IN_COMMUNICATION is active.
+     * 2. Save the current audio mode, VOICE_CALL volume, and media volume.
+     * 3. Switch to MODE_IN_COMMUNICATION — routes STREAM_VOICE_CALL through
+     *    BT SCO. Without it, TTS may go to the loudspeaker.
+     * 4. Set STREAM_VOICE_CALL to maximum.
+     * 5. If [maxVolume] is true, also set STREAM_MUSIC to maximum.
      *
      * STREAM_RING is NEVER touched — the speaker ringtone stays as-is.
      *
      * Must be paired with [restoreAfterAnnouncement].
      */
-    fun prepareForAnnouncement(volumePct: Int) {
-        // Save current state
+    fun prepareForAnnouncement(volumePct: Int, maxVolume: Boolean = false) {
+        // 1. Request audio focus to prevent ducking
+        requestAnnouncementFocus()
+
+        // 2. Save current state
         if (savedAudioMode < 0) {
             savedAudioMode = audioManager.mode
         }
         if (savedVoiceCallVolume < 0) {
             savedVoiceCallVolume = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
         }
+        if (maxVolume && savedMediaVolume < 0) {
+            savedMediaVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }
 
-        // Activate SCO routing — this is the key to making TTS go through BT
+        // 3. Activate SCO routing — this is the key to making TTS go through BT
         runCatching {
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         }
         Log.d(TAG, "Audio mode -> MODE_IN_COMMUNICATION (was $savedAudioMode)")
 
-        // ALWAYS set VOICE_CALL stream to MAXIMUM volume for loudest possible output
-        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-        Log.d(TAG, "VOICE_CALL volume -> MAX ($max) [TTS will apply ${volumePct}% boost]")
-        setStreamSafely(AudioManager.STREAM_VOICE_CALL, max)
+        // 4. Set VOICE_CALL stream to MAXIMUM volume for loudest output
+        val vcMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+        Log.d(TAG, "VOICE_CALL volume -> MAX ($vcMax)")
+        setStreamSafely(AudioManager.STREAM_VOICE_CALL, vcMax)
+
+        // 5. Optionally set MUSIC stream to max (works on wired, BT A2DP, BT SCO)
+        if (maxVolume) {
+            val musicMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            Log.d(TAG, "MUSIC volume -> MAX ($musicMax) [was $savedMediaVolume, maxVolume=true]")
+            setStreamSafely(AudioManager.STREAM_MUSIC, musicMax)
+        }
     }
 
     /**
-     * Restore the audio mode and VOICE_CALL volume to pre-announcement
-     * values. Safe to call even if [prepareForAnnouncement] wasn't called.
+     * Restore the audio mode, VOICE_CALL volume, and media volume to
+     * pre-announcement values. Safe to call even if [prepareForAnnouncement]
+     * wasn't called. Safe to call repeatedly.
      */
     fun restoreAfterAnnouncement() {
         if (savedAudioMode >= 0) {
@@ -211,6 +226,35 @@ class AudioRouter(private val context: Context) {
             Log.d(TAG, "VOICE_CALL volume -> $savedVoiceCallVolume (restoring)")
             setStreamSafely(AudioManager.STREAM_VOICE_CALL, savedVoiceCallVolume)
             savedVoiceCallVolume = -1
+        }
+        if (savedMediaVolume >= 0) {
+            Log.d(TAG, "MUSIC volume -> $savedMediaVolume (restoring)")
+            setStreamSafely(AudioManager.STREAM_MUSIC, savedMediaVolume)
+            savedMediaVolume = -1
+        }
+        abandonAnnouncementFocus()
+    }
+
+    private fun requestAnnouncementFocus() {
+        if (audioFocusRequest != null) return
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(attrs)
+            .setWillPauseWhenDucked(false)
+            .build()
+        val result = audioManager.requestAudioFocus(request)
+        audioFocusRequest = request
+        Log.d(TAG, "Audio focus requested: result=$result (GRANTED=1)")
+    }
+
+    private fun abandonAnnouncementFocus() {
+        audioFocusRequest?.let { req ->
+            runCatching { audioManager.abandonAudioFocusRequest(req) }
+            audioFocusRequest = null
+            Log.d(TAG, "Audio focus abandoned")
         }
     }
 

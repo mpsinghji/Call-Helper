@@ -135,12 +135,6 @@ class CallHandlerService : Service() {
         }
         if (!stateMachine.transitionTo(CallState.RINGING)) return
 
-        // Start voice commands
-        if (settings.voiceCommandsEnabled) {
-            Log.d(TAG, "Voice commands: STARTING")
-            voiceCommands.startContinuous()
-        }
-
         // Observe listener state for overlay icon
         overlayStateJob = scope.launch {
             voiceCommands.listenerState.collect { updateOverlayMicIcon(it) }
@@ -153,7 +147,11 @@ class CallHandlerService : Service() {
             }
         }
 
-        // Session: identity resolution + BT announcement
+        // Show initial phase on overlay
+        debugTextView?.text = "📞 Incoming call"
+
+        // Session: identity resolution → BT announcement → voice commands
+        // Flow: overlay appears → TTS plays → listener starts after TTS
         sessionJob = scope.launch {
             // Subscribe to identity updates
             launch {
@@ -177,6 +175,13 @@ class CallHandlerService : Service() {
             if (settings.announcementEnabled && audioRouter.isBluetoothAudioConnected()) {
                 announceViaBluetooth(currentIdentity)
             }
+
+            // Start voice commands AFTER announcement completes
+            if (settings.voiceCommandsEnabled && stateMachine.isRinging) {
+                Log.d(TAG, "Voice commands: STARTING (after announcement)")
+                debugTextView?.text = "🎤 Listening..."
+                voiceCommands.startContinuous()
+            }
         }
     }
 
@@ -186,14 +191,13 @@ class CallHandlerService : Service() {
      * Announces the caller through Bluetooth earphones.
      *
      * Steps:
-     * 1. Pause voice commands (so TTS doesn't trigger recognition)
-     * 2. Connect SCO (BT phone-call audio channel)
-     * 3. prepareForAnnouncement: set MODE_IN_COMMUNICATION (routes
-     *    VOICE_CALL through SCO) + set VOICE_CALL volume to configured level
-     * 4. Speak via TTS through SCO (STREAM_VOICE_CALL)
-     * 5. restoreAfterAnnouncement: restore audio mode + volume
-     * 6. Resume voice commands
+     * 1. Connect SCO (BT phone-call audio channel)
+     * 2. prepareForAnnouncement: request audio focus + set MODE_IN_COMMUNICATION
+     *    (routes VOICE_CALL through SCO) + set volumes to max
+     * 3. Speak via TTS through SCO (STREAM_VOICE_CALL)
+     * 4. restoreAfterAnnouncement: restore audio mode + volumes + abandon focus
      *
+     * Voice commands are NOT running yet — they start after this returns.
      * STREAM_RING (speaker ringtone) is NEVER touched.
      */
     private suspend fun announceViaBluetooth(identity: CallerIdentity) {
@@ -207,20 +211,20 @@ class CallHandlerService : Service() {
 
         val name = identity.displayName ?: getString(R.string.unknown_caller)
         val text = getString(R.string.announce_incoming_call, name)
-        Log.i(TAG, "Announcing via Bluetooth: '$name' at ${settings.announcementVolumePct}% volume")
+        Log.i(TAG, "Announcing via Bluetooth: '$name'")
 
-        voiceCommands.pause()
+        debugTextView?.text = "🔊 Announcing..."
         try {
-            // Set MODE_IN_COMMUNICATION + VOICE_CALL volume
-            audioRouter.prepareForAnnouncement(settings.announcementVolumePct)
+            // Set MODE_IN_COMMUNICATION + volumes + audio focus
+            audioRouter.prepareForAnnouncement(
+                settings.announcementVolumePct,
+                maxVolume = settings.maxVolumeEnabled
+            )
 
             announcer.announce(text)
         } finally {
-            // Restore audio mode + volume
+            // Restore audio mode + volumes + abandon focus
             audioRouter.restoreAfterAnnouncement()
-            if (settings.voiceCommandsEnabled) {
-                voiceCommands.resume(viaBluetooth = true)
-            }
         }
     }
 

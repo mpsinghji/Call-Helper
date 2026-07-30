@@ -64,13 +64,9 @@ class AnnouncementManager(
      * - SCO is connected via AudioRouter.connectBluetoothAudio()
      * - AudioRouter.prepareForAnnouncement() was called (sets MODE_IN_COMMUNICATION + max volume)
      * 
-     * This method applies the user's volume percentage (100-200%) as a TTS audio boost:
-     * - 100% = normal speech volume (1.0x)
-     * - 150% = 1.5x boost
-     * - 200% = 2.0x boost (maximum)
-     * 
-     * The system VOICE_CALL stream is already at max, so this TTS boost
-     * creates ACTUALLY LOUDER output beyond the normal maximum.
+     * Volume is controlled entirely by AudioRouter's stream volume settings.
+     * TTS plays at full amplitude (1.0); actual loudness comes from the
+     * VOICE_CALL and MUSIC stream levels set by AudioRouter.
      */
     suspend fun announce(text: String) {
         if (!ttsReady.await()) {
@@ -81,23 +77,19 @@ class AnnouncementManager(
         tts.setAudioAttributes(scoAttributes)
         tts.setSpeechRate(settings.speechRatePct / 100f)
 
-        // Apply volume boost: 100% = 1.0, 200% = 2.0
-        // This MULTIPLIES the audio amplitude, making it actually louder
-        val volumeBoost = (settings.announcementVolumePct / 100f).coerceIn(1.0f, 2.0f)
-        
-        Log.d(TAG, "Speaking: '$text' at ${settings.announcementVolumePct}% (TTS boost: ${volumeBoost}x)")
+        Log.d(TAG, "Speaking: '$text'")
         withTimeoutOrNull(MAX_UTTERANCE_MS) {
-            speakAndAwait(text, volumeBoost)
+            speakAndAwait(text)
         }
     }
 
-    private suspend fun speakAndAwait(text: String, volumeBoost: Float) =
+    private suspend fun speakAndAwait(text: String) =
         suspendCancellableCoroutine<Unit> { cont ->
             val id = "chs-" + utteranceSeq.incrementAndGet()
 
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
-                    Log.d(TAG, "TTS started: $utteranceId at ${volumeBoost}x volume")
+                    Log.d(TAG, "TTS started: $utteranceId")
                 }
 
                 override fun onDone(utteranceId: String?) {
@@ -117,16 +109,14 @@ class AnnouncementManager(
                 }
             })
 
-            // Create enhanced params with volume boost + stream routing
+            // Route through STREAM_VOICE_CALL at full amplitude
             @Suppress("DEPRECATION")
-            val enhancedParams = Bundle().apply {
+            val params = Bundle().apply {
                 putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_VOICE_CALL)
-                // KEY_PARAM_VOLUME: 0.0 = silent, 1.0 = normal, 2.0 = double amplitude (LOUDER)
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volumeBoost)
+                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
             }
 
-            // Pass enhanced params Bundle with STREAM_VOICE_CALL + volume boost
-            val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, enhancedParams, id)
+            val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, id)
             Log.d(TAG, "tts.speak() result = $result (SUCCESS=0)")
 
             if (result != TextToSpeech.SUCCESS && cont.isActive) {
