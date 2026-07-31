@@ -114,12 +114,19 @@ class MainActivity : AppCompatActivity() {
             }
 
             try {
-                // Set MODE_IN_COMMUNICATION + VOICE_CALL volume (routes TTS through BT)
-                router.prepareForAnnouncement(
-                    settings.announcementVolumePct,
-                    maxVolume = settings.maxVolumeEnabled
+                // Set MODE_IN_COMMUNICATION + slider-proportional volume (routes TTS through BT)
+                val shouldPlay = router.prepareForAnnouncement(
+                    settings.announcementVolumePct
                 )
-                tts.announce(getString(R.string.test_bt_announcement_text))
+                if (shouldPlay) {
+                    tts.announce(getString(R.string.test_bt_announcement_text))
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.test_bt_volume_zero),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             } finally {
                 router.restoreAfterAnnouncement()
                 router.disconnectBluetoothAudio()

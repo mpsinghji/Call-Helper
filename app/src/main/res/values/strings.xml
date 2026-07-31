@@ -22,13 +22,11 @@
     <string name="pref_voice_commands_summary">Answer, Reject, Silent, Speaker</string>
     <string name="pref_cat_announcement">Bluetooth announcement</string>
     <string name="pref_announcement_title">Announce caller ID</string>
-    <string name="pref_announcement_summary">Announce through Bluetooth earphones at maximum volume</string>
+    <string name="pref_announcement_summary">Announce through Bluetooth earphones</string>
     <string name="pref_cat_audio">Audio</string>
     <string name="pref_speech_rate_title">Speech rate</string>
     <string name="pref_announcement_volume_title">Announcement volume</string>
-    <string name="pref_announcement_volume_summary">Bluetooth earphone volume (100–200%, ringtone muted during announcement)</string>
-    <string name="pref_max_volume_title">Play announcements at maximum volume</string>
-    <string name="pref_max_volume_summary">Temporarily set device volume to maximum during announcements, then restore</string>
+    <string name="pref_announcement_volume_summary">0% = off, 100% = maximum volume</string>
 
     <string name="pref_cat_voip">VoIP calls</string>
     <string name="pref_voip_announcement_title">Announce VoIP calls</string>
@@ -48,6 +46,7 @@
     <string name="test_bt_sco_failed">Bluetooth audio connection failed</string>
     <string name="test_bt_announcement_text">This is a test announcement from Call Handler. If you can hear this through your earphones, Bluetooth announcement is working correctly.</string>
     <string name="test_bt_done">Bluetooth test complete</string>
+    <string name="test_bt_volume_zero">Announcement volume is set to 0% — increase the slider to hear announcements</string>
 
     <!-- Overlay -->
     <string name="overlay_phone_desc">Call Handler active</string>

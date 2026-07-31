@@ -28,10 +28,10 @@ import kotlin.coroutines.resume
  * Handles:
  * - SCO connection for mic (voice commands) and TTS (announcements)
  * - Audio mode switching so TTS actually routes through BT SCO
- * - VOICE_CALL stream volume control for announcement loudness
+ * - VOICE_CALL stream volume control (slider-proportional) for announcements
  * - Ringer silencing and speakerphone toggling
  *
- * STREAM_RING (speaker ringtone) is NEVER touched by this class.
+ * STREAM_RING (speaker ringtone) and STREAM_MUSIC are NEVER touched.
  */
 class AudioRouter(private val context: Context) {
 
@@ -45,7 +45,6 @@ class AudioRouter(private val context: Context) {
 
     private var scoConnected = false
     private var savedVoiceCallVolume = -1
-    private var savedMediaVolume = -1
     private var savedAudioMode = -1
     private var audioFocusRequest: AudioFocusRequest? = null
 
@@ -167,17 +166,22 @@ class AudioRouter(private val context: Context) {
      *
      * 1. Request audio focus (GAIN_TRANSIENT) to prevent other apps from
      *    being ducked by the system while MODE_IN_COMMUNICATION is active.
-     * 2. Save the current audio mode, VOICE_CALL volume, and media volume.
+     * 2. Save the current audio mode and VOICE_CALL volume.
      * 3. Switch to MODE_IN_COMMUNICATION — routes STREAM_VOICE_CALL through
      *    BT SCO. Without it, TTS may go to the loudspeaker.
-     * 4. Set STREAM_VOICE_CALL to maximum.
-     * 5. If [maxVolume] is true, also set STREAM_MUSIC to maximum.
+     * 4. Calculate the target VOICE_CALL volume index from [sliderPct] (0–100)
+     *    as a proportion of the stream's max index. If the result is 0 the
+     *    announcement is effectively muted and the caller should skip TTS.
      *
      * STREAM_RING is NEVER touched — the speaker ringtone stays as-is.
+     * STREAM_MUSIC is NEVER touched.
      *
      * Must be paired with [restoreAfterAnnouncement].
+     *
+     * @return `true` if the volume was set and TTS should play,
+     *         `false` if [sliderPct] resolved to 0 (skip announcement).
      */
-    fun prepareForAnnouncement(volumePct: Int, maxVolume: Boolean = false) {
+    fun prepareForAnnouncement(sliderPct: Int): Boolean {
         // 1. Request audio focus to prevent ducking
         requestAnnouncementFocus()
 
@@ -188,9 +192,6 @@ class AudioRouter(private val context: Context) {
         if (savedVoiceCallVolume < 0) {
             savedVoiceCallVolume = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
         }
-        if (maxVolume && savedMediaVolume < 0) {
-            savedMediaVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        }
 
         // 3. Activate SCO routing — this is the key to making TTS go through BT
         runCatching {
@@ -198,21 +199,25 @@ class AudioRouter(private val context: Context) {
         }
         Log.d(TAG, "Audio mode -> MODE_IN_COMMUNICATION (was $savedAudioMode)")
 
-        // 4. Set VOICE_CALL stream to MAXIMUM volume for loudest output
-        val vcMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-        Log.d(TAG, "VOICE_CALL volume -> MAX ($vcMax)")
-        setStreamSafely(AudioManager.STREAM_VOICE_CALL, vcMax)
+        // 4. Calculate proportional volume index
+        val maxIndex = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+        val fraction = sliderPct.coerceIn(0, 100) / 100f
+        val targetIndex = Math.round(maxIndex * fraction).coerceIn(0, maxIndex)
 
-        // 5. Optionally set MUSIC stream to max (works on wired, BT A2DP, BT SCO)
-        if (maxVolume) {
-            val musicMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            Log.d(TAG, "MUSIC volume -> MAX ($musicMax) [was $savedMediaVolume, maxVolume=true]")
-            setStreamSafely(AudioManager.STREAM_MUSIC, musicMax)
+        if (targetIndex == 0) {
+            Log.d(TAG, "Announcement volume slider at 0% — skipping announcement")
+            // Restore immediately since we won't be announcing
+            restoreAfterAnnouncement()
+            return false
         }
+
+        Log.d(TAG, "VOICE_CALL volume -> $targetIndex / $maxIndex (slider=$sliderPct%)")
+        setStreamSafely(AudioManager.STREAM_VOICE_CALL, targetIndex)
+        return true
     }
 
     /**
-     * Restore the audio mode, VOICE_CALL volume, and media volume to
+     * Restore the audio mode and VOICE_CALL volume to
      * pre-announcement values. Safe to call even if [prepareForAnnouncement]
      * wasn't called. Safe to call repeatedly.
      */
@@ -226,11 +231,6 @@ class AudioRouter(private val context: Context) {
             Log.d(TAG, "VOICE_CALL volume -> $savedVoiceCallVolume (restoring)")
             setStreamSafely(AudioManager.STREAM_VOICE_CALL, savedVoiceCallVolume)
             savedVoiceCallVolume = -1
-        }
-        if (savedMediaVolume >= 0) {
-            Log.d(TAG, "MUSIC volume -> $savedMediaVolume (restoring)")
-            setStreamSafely(AudioManager.STREAM_MUSIC, savedMediaVolume)
-            savedMediaVolume = -1
         }
         abandonAnnouncementFocus()
     }

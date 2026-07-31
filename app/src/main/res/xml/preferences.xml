@@ -43,21 +43,15 @@
             app:min="50"
             app:showSeekBarValue="true" />
 
-        <!-- Announcement volume: 100..200 percent of VOICE_CALL max -->
+        <!-- Announcement volume: 0..100 percent of VOICE_CALL max. 0 = off. -->
         <SeekBarPreference
             android:key="pref_announcement_volume_pct"
             android:title="@string/pref_announcement_volume_title"
             android:summary="@string/pref_announcement_volume_summary"
-            android:defaultValue="200"
-            android:max="200"
-            app:min="100"
+            android:defaultValue="100"
+            android:max="100"
+            app:min="0"
             app:showSeekBarValue="true" />
-
-        <SwitchPreferenceCompat
-            android:key="pref_max_volume_enabled"
-            android:title="@string/pref_max_volume_title"
-            android:summary="@string/pref_max_volume_summary"
-            android:defaultValue="true" />
 
     </PreferenceCategory>
 

@@ -104,11 +104,14 @@ class VoipAnnouncementService : Service() {
         Log.i(TAG, "Announcing VoIP: '$text' at ${settings.announcementVolumePct}% volume")
 
         try {
-            audioRouter.prepareForAnnouncement(
-                settings.announcementVolumePct,
-                maxVolume = settings.maxVolumeEnabled
+            val shouldPlay = audioRouter.prepareForAnnouncement(
+                settings.announcementVolumePct
             )
-            announcer.announce(text)
+            if (shouldPlay) {
+                announcer.announce(text)
+            } else {
+                Log.d(TAG, "Announcement volume is 0% — skipping VoIP TTS")
+            }
         } finally {
             // CRITICAL: Fully restore audio state immediately after announcement
             // so VoIP app (WhatsApp) can take over audio routing for its ringtone

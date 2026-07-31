@@ -193,9 +193,9 @@ class CallHandlerService : Service() {
      * Steps:
      * 1. Connect SCO (BT phone-call audio channel)
      * 2. prepareForAnnouncement: request audio focus + set MODE_IN_COMMUNICATION
-     *    (routes VOICE_CALL through SCO) + set volumes to max
+     *    (routes VOICE_CALL through SCO) + set proportional volume
      * 3. Speak via TTS through SCO (STREAM_VOICE_CALL)
-     * 4. restoreAfterAnnouncement: restore audio mode + volumes + abandon focus
+     * 4. restoreAfterAnnouncement: restore audio mode + volume + abandon focus
      *
      * Voice commands are NOT running yet — they start after this returns.
      * STREAM_RING (speaker ringtone) is NEVER touched.
@@ -215,15 +215,17 @@ class CallHandlerService : Service() {
 
         debugTextView?.text = "🔊 Announcing..."
         try {
-            // Set MODE_IN_COMMUNICATION + volumes + audio focus
-            audioRouter.prepareForAnnouncement(
-                settings.announcementVolumePct,
-                maxVolume = settings.maxVolumeEnabled
+            // Set MODE_IN_COMMUNICATION + slider-proportional volume + audio focus
+            val shouldPlay = audioRouter.prepareForAnnouncement(
+                settings.announcementVolumePct
             )
-
-            announcer.announce(text)
+            if (shouldPlay) {
+                announcer.announce(text)
+            } else {
+                Log.d(TAG, "Announcement volume is 0% — skipping TTS")
+            }
         } finally {
-            // Restore audio mode + volumes + abandon focus
+            // Restore audio mode + volume + abandon focus
             audioRouter.restoreAfterAnnouncement()
         }
     }
@@ -366,7 +368,9 @@ class CallHandlerService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
