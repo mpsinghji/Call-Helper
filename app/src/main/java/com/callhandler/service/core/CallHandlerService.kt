@@ -92,12 +92,15 @@ class CallHandlerService : Service() {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
         when (intent?.action) {
             ACTION_RINGING -> {
-                Log.d(TAG, "ACTION_RINGING received")
+                val number = intent.getStringExtra(EXTRA_NUMBER)
+                val source = intent.getStringExtra(EXTRA_IDENTITY_SOURCE)
+                    ?: "PHONE_STATE"
+                Log.d(TAG, "ACTION_RINGING received: numberPresent=${!number.isNullOrBlank()} (source=$source)")
                 startForegroundCompat()
                 Log.d(TAG, "FGS started, now showing overlay...")
                 showStatusOverlay()
                 Log.d(TAG, "Overlay show attempted, now processing ringing...")
-                onRinging(intent.getStringExtra(EXTRA_NUMBER))
+                onRinging(number, source)
             }
 
             ACTION_ANSWERED -> {
@@ -123,12 +126,12 @@ class CallHandlerService : Service() {
 
     // ---------------------------------------------------------------- ringing
 
-    private fun onRinging(number: String?) {
+    private fun onRinging(number: String?, source: String) {
         if (stateMachine.isRinging) {
-            // Duplicate RINGING broadcast — forward the number if available.
+            // Duplicate RINGING event — forward the number if available.
             if (number != null) {
                 scope.launch(Dispatchers.IO) {
-                    identityManager.onNumberAvailable(number)
+                    identityManager.onIncomingNumber(number, source)
                 }
             }
             return
@@ -168,7 +171,14 @@ class CallHandlerService : Service() {
             // Resolve identity (contacts first, then wait for Truecaller)
             currentIdentity = identityManager.resolveIdentity(
                 number = number,
+                source = source,
                 waitMs = TRUECALLER_WAIT_MS
+            )
+            Log.i(
+                TAG,
+                "Identity selected: source=${currentIdentity.source}, " +
+                    "hasName=${currentIdentity.displayName != null}, " +
+                    "numberPresent=${currentIdentity.number != null}"
             )
 
             // Announce through BT earphones only
@@ -193,9 +203,10 @@ class CallHandlerService : Service() {
      * Steps:
      * 1. Connect SCO (BT phone-call audio channel)
      * 2. prepareForAnnouncement: request audio focus + set MODE_IN_COMMUNICATION
-     *    (routes VOICE_CALL through SCO) + set proportional volume
+     *    (routes VOICE_CALL through SCO) + set slider-proportional volume
      * 3. Speak via TTS through SCO (STREAM_VOICE_CALL)
-     * 4. restoreAfterAnnouncement: restore audio mode + volume + abandon focus
+     * 4. finishAnnouncement: restore audio mode + abandon focus
+     *    (volume is intentionally left at the slider value for the call)
      *
      * Voice commands are NOT running yet — they start after this returns.
      * STREAM_RING (speaker ringtone) is NEVER touched.
@@ -225,8 +236,8 @@ class CallHandlerService : Service() {
                 Log.d(TAG, "Announcement volume is 0% — skipping TTS")
             }
         } finally {
-            // Restore audio mode + volume + abandon focus
-            audioRouter.restoreAfterAnnouncement()
+            // Restore audio mode + abandon focus (volume stays for the call)
+            audioRouter.finishAnnouncement()
         }
     }
 
@@ -281,6 +292,20 @@ class CallHandlerService : Service() {
     private fun onCallAnswered() {
         if (!stateMachine.transitionTo(CallState.ANSWERED)) return
 
+        // Hold VOICE_CALL volume through Android's SCO re-initialization.
+        // Android recreates the BT HFP link for the real call at a variable,
+        // OEM-dependent time and applies its own volume (~50%). Fixed delays
+        // lose the race; the hold re-applies the slider value reactively
+        // (focus/mode/poll) until the OS stops interfering, then self-stops.
+        // Detached Handler-based so it survives stopSession() right below.
+        val volumePct = settings.announcementVolumePct
+        if (volumePct > 0 && audioRouter.isBluetoothAudioConnected()) {
+            audioRouter.startCallVolumeHold(volumePct)
+        } else {
+            Log.d(TAG, "Post-answer volume hold: skipped " +
+                "(pct=$volumePct, bt=${audioRouter.isBluetoothAudioConnected()})")
+        }
+
         if (speakerRequested) {
             scope.launch {
                 delay(500)
@@ -295,6 +320,7 @@ class CallHandlerService : Service() {
     private fun onCallEnded() {
         if (stateMachine.current == CallState.IDLE) return
         stateMachine.transitionTo(CallState.ENDED)
+        audioRouter.stopCallVolumeHold()
         stopSession()
         stopSelfSafely()
     }
@@ -310,7 +336,7 @@ class CallHandlerService : Service() {
         announcer.stopSpeaking()
         voiceCommands.stopListening()
         hideStatusOverlay()
-        audioRouter.restoreAll()
+        audioRouter.cleanupAudio()
         identityManager.reset()
         currentIdentity = CallerIdentity.unknown(null)
         speakerRequested = false
@@ -323,6 +349,7 @@ class CallHandlerService : Service() {
     }
 
     override fun onDestroy() {
+        audioRouter.stopCallVolumeHold()
         stopSession()
         announcer.shutdown()
         voiceCommands.destroy()
@@ -525,6 +552,10 @@ class CallHandlerService : Service() {
         const val ACTION_TRUECALLER_UPDATE = "com.callhandler.action.TRUECALLER_UPDATE"
 
         const val EXTRA_NUMBER = "extra_number"
+        const val EXTRA_IDENTITY_SOURCE = "extra_identity_source"
+
+        const val IDENTITY_SOURCE_CALL_SCREENING = "CALL_SCREENING"
+        const val IDENTITY_SOURCE_PHONE_STATE = "PHONE_STATE"
         const val EXTRA_CALLER_NAME = "extra_caller_name"
 
         private const val NOTIFICATION_ID = 42

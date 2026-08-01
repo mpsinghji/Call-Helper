@@ -18,9 +18,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Resolves who is calling:
- *  1. Saved contact name  (instant)
+ *  1. Saved contact name  (instant, from any number source)
  *  2. Truecaller           (waits up to [resolveIdentity.waitMs])
  *  3. "Unknown caller"     (fallback)
+ *
+ * The incoming number is delivered by either Android's call-screening
+ * service (reliable) or the PHONE_STATE broadcast (best effort). Both
+ * sources funnel into the same event-driven pipeline; the first valid
+ * identity completes resolution, and saved Contacts remain authoritative.
  *
  * Identity is published through a StateFlow for subscribers.
  */
@@ -34,43 +39,25 @@ class CallerIdentityManager(private val context: Context) {
     private var lastTruecallerName: String? = null
 
     /**
-     * Contact lookup first; if that fails, wait up to [waitMs] for a
-     * Truecaller name. Returns the best identity available.
+     * Registers an incoming number delivered by either number source.
+     * The first valid contact match (or Truecaller name) completes the
+     * pending resolution; subsequent duplicates are ignored.
+     *
+     * @param number   Phone number, already known non-blank.
+     * @param source   "CALL_SCREENING" or "PHONE_STATE" for diagnostics.
      */
-    suspend fun resolveIdentity(number: String?, waitMs: Long): CallerIdentity {
-        currentNumber = number
-        lastTruecallerName = null
-
-        if (number != null) {
-            val contactName = lookupContact(number)
-            if (contactName != null) {
-                Log.d(TAG, "Resolved from contacts: $contactName")
-                val id = CallerIdentity(number, contactName, IdentitySource.CONTACT)
-                _identity.value = id
-                return id
-            }
-        }
-
-        val deferred = CompletableDeferred<CallerIdentity>()
-        pendingResolve = deferred
-        val resolved = withTimeoutOrNull(waitMs) { deferred.await() }
-        pendingResolve = null
-
-        val id = resolved ?: run {
-            Log.d(TAG, "Identity resolution timeout -> Unknown")
-            CallerIdentity.unknown(currentNumber)
-        }
-        if (_identity.value == null) _identity.value = id
-        return id
-    }
-
-    /** Called when a later broadcast supplies the phone number. */
-    fun onNumberAvailable(number: String) {
+    fun onIncomingNumber(number: String, source: String) {
         if (number == currentNumber) return
         currentNumber = number
-        val name = runCatching { lookupContactBlocking(number) }.getOrNull() ?: return
-        Log.d(TAG, "Resolved from late lookup: $name")
-        publish(CallerIdentity(number, name, IdentitySource.CONTACT))
+        Log.d(TAG, "Incoming number source=$source, starting lookup")
+
+        val name = runCatching { lookupContactBlocking(number) }.getOrNull()
+        if (name != null) {
+            Log.d(TAG, "Contacts lookup: MATCH -> $name")
+            publish(CallerIdentity(number, name, IdentitySource.CONTACT))
+        } else {
+            Log.d(TAG, "Contacts lookup: NO_MATCH (waiting for Truecaller)")
+        }
     }
 
     /** Called by the notification listener when Truecaller identifies the caller. */
@@ -81,6 +68,66 @@ class CallerIdentityManager(private val context: Context) {
         Log.d(TAG, "Resolved from Truecaller: $trimmed")
         if (_identity.value?.source == IdentitySource.CONTACT) return
         publish(CallerIdentity(currentNumber, trimmed, IdentitySource.TRUECALLER))
+    }
+
+    /**
+     * Waits up to [waitMs] for the first valid identity from Contacts or
+     * Truecaller. Returns Unknown if neither source succeeds.
+     *
+     * @param number  Incoming number from the first RINGING event (may be null).
+     * @param source  "CALL_SCREENING" or "PHONE_STATE" for diagnostics.
+     */
+    suspend fun resolveIdentity(number: String?, source: String, waitMs: Long): CallerIdentity {
+        // Register the first event's number before creating the pending result.
+        if (number != null && number != currentNumber) {
+            currentNumber = number
+            Log.d(TAG, "Incoming number source=$source, starting lookup")
+        }
+
+        val deferred = CompletableDeferred<CallerIdentity>()
+        pendingResolve = deferred
+
+        // If a number already arrived (screening or PHONE_STATE), look it
+        // up immediately before waiting for late deliveries.
+        currentNumber?.let { number2 ->
+            val contactName = lookupContact(number2)
+            if (contactName != null) {
+                Log.d(TAG, "Contacts lookup: MATCH -> $contactName")
+                val id = CallerIdentity(number2, contactName, IdentitySource.CONTACT)
+                _identity.value = id
+                pendingResolve = null
+                return id
+            }
+            Log.d(TAG, "Contacts lookup: NO_MATCH")
+        } ?: Log.d(TAG, "Contacts lookup: SKIPPED_NO_NUMBER")
+
+        // Check whether a number/Truecaller event completed resolution
+        // while the contact lookup above was suspended on IO.
+        if (deferred.isCompleted) {
+            pendingResolve = null
+            val id = deferred.await()
+            if (_identity.value == null) _identity.value = id
+            return id
+        }
+
+        // Wait for Truecaller or a late number delivery.
+        val resolved = withTimeoutOrNull(waitMs) { deferred.await() }
+        pendingResolve = null
+
+        val id = resolved
+            ?: _identity.value?.takeIf { it.displayName != null }
+            ?: run {
+                Log.d(
+                    TAG,
+                    "Identity resolution timeout -> Unknown " +
+                        "(numberPresent=${currentNumber != null}, " +
+                        "contactsChecked=${currentNumber != null}, " +
+                        "truecallerReceived=${lastTruecallerName != null})"
+                )
+                CallerIdentity.unknown(currentNumber)
+            }
+        if (_identity.value == null) _identity.value = id
+        return id
     }
 
     private fun publish(id: CallerIdentity) {

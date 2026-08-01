@@ -113,18 +113,18 @@ class VoipAnnouncementService : Service() {
                 Log.d(TAG, "Announcement volume is 0% — skipping VoIP TTS")
             }
         } finally {
-            // CRITICAL: Fully restore audio state immediately after announcement
-            // so VoIP app (WhatsApp) can take over audio routing for its ringtone
-            audioRouter.restoreAfterAnnouncement()
+            // Restore audio mode + abandon focus (volume is left as-is)
+            // then disconnect SCO so VoIP app can handle its own audio
+            audioRouter.finishAnnouncement()
             audioRouter.disconnectBluetoothAudio()
-            Log.d(TAG, "Audio state fully restored — VoIP app can now handle ringtone routing")
+            Log.d(TAG, "Audio mode restored, SCO disconnected — VoIP app can now handle ringtone routing")
         }
     }
 
     private fun stopSelfSafely() {
         announceJob?.cancel()
         announcer.stopSpeaking()
-        audioRouter.restoreAll()
+        audioRouter.cleanupAudio()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -133,7 +133,7 @@ class VoipAnnouncementService : Service() {
         announceJob?.cancel()
         announcer.stopSpeaking()
         announcer.shutdown()
-        audioRouter.restoreAll()
+        audioRouter.cleanupAudio()
         scope.cancel()
         super.onDestroy()
     }

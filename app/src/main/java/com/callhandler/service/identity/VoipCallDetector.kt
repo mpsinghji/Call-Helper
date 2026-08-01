@@ -13,6 +13,16 @@ object VoipCallDetector {
 
     private const val TAG = "VoipCallDetector"
 
+    /** Explicit ringing language accepted only from notification boilerplate fields. */
+    private val EXPLICIT_INCOMING_CALL_HINT = Regex(
+        "\\b(incoming(?:\\s+(?:voice|audio|video))?\\s+call|" +
+            "incoming|ringing|is\\s+calling|calling\\s+you)\\b",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Discord chat text commonly follows "sender: message". */
+    private val DISCORD_MESSAGE_TEXT = Regex("^.{1,40}:\\s+.+$")
+
     /**
      * Parsed VoIP call information.
      *
@@ -159,33 +169,70 @@ object VoipCallDetector {
     fun detect(sbn: StatusBarNotification): VoipCallInfo? {
         val config = appConfigMap[sbn.packageName] ?: return null
 
-        val extras = sbn.notification.extras
+        val notification = sbn.notification
+        val extras = notification.extras
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
         val combined = "$title $text".lowercase()
+        val template = extras.getString(Notification.EXTRA_TEMPLATE).orEmpty()
 
-        // PRIORITY CHECK: Reject noise patterns first (missed calls, messages, etc.)
-        // Even if they contain call keywords, noise patterns should be filtered out
-        val hasNoiseHint = config.noiseHints.any { combined.contains(it) }
-        if (hasNoiseHint) {
-            Log.d(TAG, "Rejected ${config.displayName} notification (noise detected): '$title' / '$text'")
+        // MessagingStyle is Android's structural signal for a chat/message
+        // notification. Never infer a call from words inside its message body.
+        if (template.endsWith("MessagingStyle")) {
+            Log.d(TAG, "VoipDetect: REJECTED_MESSAGING_STYLE (${config.displayName})")
             return null
         }
 
-        // Must look like a call: either CATEGORY_CALL or text contains call hints
-        val isCallCategory = sbn.notification.category == Notification.CATEGORY_CALL
-        val hasCallHint = config.callHints.any { combined.contains(it) }
+        val isCallCategory = notification.category == Notification.CATEGORY_CALL
+        val hasFullScreenIntent = notification.fullScreenIntent != null
+        val hasStructuralCallSignal = isCallCategory || hasFullScreenIntent
 
-        if (!isCallCategory && !hasCallHint) return null
+        // Reject known non-call states before accepting any textual fallback.
+        val hasNoiseHint = config.noiseHints.any { combined.contains(it) }
+        if (hasNoiseHint) {
+            Log.d(TAG, "VoipDetect: REJECTED_NOISE (${config.displayName}): '$title' / '$text'")
+            return null
+        }
 
-        // Determine call type
-        val isVideo = config.videoHints.any { combined.contains(it) }
+        // Discord channel messages commonly use "#channel" as the title and
+        // "sender: message" as text. Reject that shape unless Android itself
+        // marks the notification as an active incoming call.
+        val looksLikeDiscordMessage = config.packageName == "com.discord" &&
+            (title.contains('#') || DISCORD_MESSAGE_TEXT.matches(text.trim()))
+        if (!hasStructuralCallSignal && looksLikeDiscordMessage) {
+            Log.d(TAG, "VoipDetect: REJECTED_DISCORD_MESSAGE: '$title' / '$text'")
+            return null
+        }
+
+        // Some OEM/app versions omit CATEGORY_CALL. Their fallback must use
+        // explicit ringing language from boilerplate fields only; arbitrary
+        // chat message bodies are deliberately excluded.
+        val boilerplate = "$title $subText"
+        val hasExplicitCallHint = EXPLICIT_INCOMING_CALL_HINT.containsMatchIn(boilerplate)
+        if (!hasStructuralCallSignal && !hasExplicitCallHint) {
+            Log.d(
+                TAG,
+                "VoipDetect: REJECTED_NO_CALL_SIGNAL (${config.displayName}, " +
+                    "category=${notification.category}, fullScreen=$hasFullScreenIntent)"
+            )
+            return null
+        }
+
+        val videoFields = "$title $text $subText".lowercase()
+        val isVideo = config.videoHints.any { videoFields.contains(it) }
         val callType = if (isVideo) "video call" else "voice call"
+        val callerName = extractCallerName(title, text, config) ?: run {
+            Log.d(TAG, "VoipDetect: REJECTED_NO_CALLER_NAME (${config.displayName})")
+            return null
+        }
 
-        // Extract caller name — usually the title for most apps
-        val callerName = extractCallerName(title, text, config) ?: return null
-
-        Log.i(TAG, "Detected ${config.displayName} $callType from '$callerName'")
+        Log.i(
+            TAG,
+            "VoipDetect: ACCEPTED ${config.displayName} $callType from '$callerName' " +
+                "(category=${notification.category}, fullScreen=$hasFullScreenIntent, " +
+                "explicitHint=$hasExplicitCallHint)"
+        )
         return VoipCallInfo(
             appDisplayName = config.displayName,
             callType = callType,

@@ -30,7 +30,8 @@ class CallStateReceiver : BroadcastReceiver() {
                 val trampolineIntent = FgsStarterActivity.createIntent(
                     context = context,
                     serviceAction = CallHandlerService.ACTION_RINGING,
-                    number = number
+                    number = number,
+                    identitySource = CallHandlerService.IDENTITY_SOURCE_PHONE_STATE
                 )
                 runCatching { context.startActivity(trampolineIntent) }
                     .onFailure {
@@ -39,6 +40,10 @@ class CallStateReceiver : BroadcastReceiver() {
                         val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
                             action = CallHandlerService.ACTION_RINGING
                             if (number != null) putExtra(CallHandlerService.EXTRA_NUMBER, number)
+                            putExtra(
+                                CallHandlerService.EXTRA_IDENTITY_SOURCE,
+                                CallHandlerService.IDENTITY_SOURCE_PHONE_STATE
+                            )
                         }
                         runCatching { context.startForegroundService(serviceIntent) }
                             .onFailure { e2 ->

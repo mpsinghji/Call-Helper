@@ -49,6 +49,22 @@
             android:text="@string/btn_overlay_permission" />
 
         <Button
+            android:id="@+id/callScreeningRoleButton"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/btn_call_screening_role" />
+
+        <TextView
+            android:id="@+id/callScreeningHintText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <Button
             android:id="@+id/testBluetoothButton"
             style="?attr/materialButtonOutlinedStyle"
             android:layout_width="match_parent"

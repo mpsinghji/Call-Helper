@@ -1,5 +1,6 @@
 package com.callhandler.service.ui
 
+import android.app.role.RoleManager
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
@@ -35,7 +36,14 @@ class MainActivity : AppCompatActivity() {
             refreshPermissionState()
         }
 
+    private val callScreeningRoleLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            updateCallScreeningRoleUi()
+        }
+
     private lateinit var grantButton: Button
+    private lateinit var callScreeningRoleButton: Button
+    private lateinit var callScreeningHintText: TextView
     private var testAnnouncer: AnnouncementManager? = null
     private var testAudioRouter: AudioRouter? = null
 
@@ -61,6 +69,11 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        callScreeningRoleButton = findViewById(R.id.callScreeningRoleButton)
+        callScreeningRoleButton.setOnClickListener { requestCallScreeningRole() }
+        callScreeningHintText = findViewById(R.id.callScreeningHintText)
+        updateCallScreeningRoleUi()
+
         findViewById<Button>(R.id.testBluetoothButton).setOnClickListener {
             testBluetoothAnnouncement()
         }
@@ -79,7 +92,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         testAnnouncer?.shutdown()
-        testAudioRouter?.restoreAll()
+        testAudioRouter?.cleanupAudio()
         super.onDestroy()
     }
 
@@ -128,7 +141,7 @@ class MainActivity : AppCompatActivity() {
                     ).show()
                 }
             } finally {
-                router.restoreAfterAnnouncement()
+                router.finishAnnouncement()
                 router.disconnectBluetoothAudio()
             }
 
@@ -174,12 +187,45 @@ class MainActivity : AppCompatActivity() {
             .contains(packageName)
         findViewById<Button>(R.id.notificationAccessButton).isEnabled = !listenerEnabled
 
+        updateCallScreeningRoleUi()
         val overlayEnabled = Settings.canDrawOverlays(this)
         findViewById<Button>(R.id.overlayPermissionButton).isEnabled = !overlayEnabled
 
         val completedSteps = listOf(runtimeGranted, listenerEnabled, overlayEnabled).count { it }
         findViewById<TextView>(R.id.statusText).text =
             getString(R.string.setup_status, completedSteps, 3)
+    }
+
+    // ------------------------------------------- call-screening role (reliable caller ID)
+
+    private fun requestCallScreeningRole() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            Toast.makeText(
+                this,
+                R.string.call_screening_role_requires,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val roleManager = getSystemService(RoleManager::class.java) ?: return
+        callScreeningRoleLauncher.launch(
+            roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
+        )
+    }
+
+    private fun updateCallScreeningRoleUi() {
+        val granted = isCallScreeningRoleGranted()
+        callScreeningRoleButton.isEnabled = !granted
+        callScreeningHintText.setText(
+            if (granted) R.string.call_screening_role_granted
+            else R.string.call_screening_role_not_granted
+        )
+    }
+
+    private fun isCallScreeningRoleGranted(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        val roleManager = getSystemService(RoleManager::class.java) ?: return false
+        return roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
     }
 
     private fun openNotificationListenerSettings() {

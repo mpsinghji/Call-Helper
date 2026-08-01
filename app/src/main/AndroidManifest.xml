@@ -88,6 +88,17 @@
             </intent-filter>
         </service>
 
+        <!-- Reliable incoming-number source through Android's call-screening role.
+             Calls are always allowed unchanged; the app never blocks or silences. -->
+        <service
+            android:name=".identity.IncomingCallScreeningService"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
         <!-- Detects incoming / answered / ended cellular calls -->
         <receiver
             android:name=".core.CallStateReceiver"

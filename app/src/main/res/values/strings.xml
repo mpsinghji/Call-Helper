@@ -33,11 +33,16 @@
     <string name="pref_voip_announcement_summary">Announce WhatsApp, Instagram, Snapchat, Telegram, and other app calls through Bluetooth</string>
 
     <!-- Permissions -->
-    <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.\n\nNotification access is needed for Truecaller caller-ID announcements through Bluetooth earphones.</string>
+    <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say "Answer", "Reject", "Speaker", or "Silent" while your phone is ringing.\n\nNotification access is needed for Truecaller caller-ID announcements through Bluetooth earphones.</string>
     <string name="setup_status">Setup: %1$d / %2$d completed</string>
     <string name="btn_grant_permissions">Grant permissions</string>
     <string name="btn_notification_access">Open notification access (for Truecaller)</string>
     <string name="btn_overlay_permission">Allow display over other apps</string>
+    <string name="btn_call_screening_role">Enable reliable caller ID</string>
+    <string name="call_screening_role_hint">Enables the phone number for saved-contact identification even when the system hides it from broadcast receivers.</string>
+    <string name="call_screening_role_granted">Reliable caller ID: enabled</string>
+    <string name="call_screening_role_not_granted">Reliable caller ID: not enabled</string>
+    <string name="call_screening_role_requires">Reliable caller ID requires Android 10 or newer</string>
     <string name="btn_test_bluetooth">Test Bluetooth announcement</string>
 
     <!-- Test button -->

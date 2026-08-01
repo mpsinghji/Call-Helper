@@ -27,12 +27,16 @@ class FgsStarterActivity : Activity() {
         // Forward the service intent
         val serviceAction = intent.getStringExtra(EXTRA_SERVICE_ACTION)
         val number = intent.getStringExtra(EXTRA_NUMBER)
+        val identitySource = intent.getStringExtra(EXTRA_IDENTITY_SOURCE)
 
         if (serviceAction != null) {
             val serviceIntent = Intent(this, CallHandlerService::class.java).apply {
                 action = serviceAction
                 if (number != null) {
                     putExtra(CallHandlerService.EXTRA_NUMBER, number)
+                }
+                if (identitySource != null) {
+                    putExtra(CallHandlerService.EXTRA_IDENTITY_SOURCE, identitySource)
                 }
             }
 
@@ -55,6 +59,7 @@ class FgsStarterActivity : Activity() {
         private const val TAG = "FgsStarterActivity"
         private const val EXTRA_SERVICE_ACTION = "extra_service_action"
         private const val EXTRA_NUMBER = "extra_number"
+        private const val EXTRA_IDENTITY_SOURCE = "extra_identity_source"
 
         /**
          * Creates an intent to launch this trampoline activity, which will
@@ -63,7 +68,8 @@ class FgsStarterActivity : Activity() {
         fun createIntent(
             context: Context,
             serviceAction: String,
-            number: String? = null
+            number: String? = null,
+            identitySource: String? = null
         ): Intent = Intent(context, FgsStarterActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -74,6 +80,9 @@ class FgsStarterActivity : Activity() {
             putExtra(EXTRA_SERVICE_ACTION, serviceAction)
             if (number != null) {
                 putExtra(EXTRA_NUMBER, number)
+            }
+            if (identitySource != null) {
+                putExtra(EXTRA_IDENTITY_SOURCE, identitySource)
             }
         }
     }
