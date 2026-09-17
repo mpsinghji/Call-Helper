@@ -38,6 +38,11 @@
         tools:targetApi="34" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Package visibility: required on Android 11+ (API 30+) to detect Truecaller -->
+    <queries>
+        <package android:name="com.truecaller" />
+    </queries>
+
     <application
         android:name=".App"
         android:allowBackup="true"
@@ -107,6 +112,26 @@
                 <action android:name="android.intent.action.PHONE_STATE" />
             </intent-filter>
         </receiver>
+
+        <!-- Truecaller accessibility debug observer (user-enabled manually) -->
+        <service
+            android:name=".debug.TruecallerAccessibilityService"
+            android:exported="true"
+            android:label="@string/truecaller_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/truecaller_accessibility_config" />
+        </service>
+
+        <!-- Debug console for Truecaller accessibility inspection + speech test -->
+        <activity
+            android:name=".debug.DebugConsoleActivity"
+            android:exported="false"
+            android:label="@string/debug_console_title" />
 
     </application>
 </manifest>

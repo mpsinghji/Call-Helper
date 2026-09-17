@@ -21,6 +21,7 @@ import androidx.preference.PreferenceFragmentCompat
 import com.callhandler.service.R
 import com.callhandler.service.audio.AnnouncementManager
 import com.callhandler.service.audio.AudioRouter
+import com.callhandler.service.debug.DebugConsoleActivity
 import com.callhandler.service.identity.CallNotificationListener
 import com.callhandler.service.settings.SettingsManager
 import kotlinx.coroutines.launch
@@ -76,6 +77,10 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.testBluetoothButton).setOnClickListener {
             testBluetoothAnnouncement()
+        }
+
+        findViewById<Button>(R.id.debugConsoleButton).setOnClickListener {
+            startActivity(Intent(this, DebugConsoleActivity::class.java))
         }
 
         if (savedInstanceState == null) {

@@ -15,6 +15,11 @@
     <string name="voip_notif_title">Announcing VoIP call</string>
     <string name="voip_notif_text">Announcing incoming call through Bluetooth</string>
 
+    <!-- Navigation Tabs -->
+    <string name="tab_settings">Settings</string>
+    <string name="tab_permissions">Permissions</string>
+    <string name="tab_tools">Tools</string>
+
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="pref_cat_voice">Voice commands</string>
@@ -32,20 +37,40 @@
     <string name="pref_voip_announcement_title">Announce VoIP calls</string>
     <string name="pref_voip_announcement_summary">Announce WhatsApp, Instagram, Snapchat, Telegram, and other app calls through Bluetooth</string>
 
-    <!-- Permissions -->
-    <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say "Answer", "Reject", "Speaker", or "Silent" while your phone is ringing.\n\nNotification access is needed for Truecaller caller-ID announcements through Bluetooth earphones.</string>
+    <!-- Permissions Tab UI -->
+    <string name="perm_progress_title">Permissions &amp; Setup</string>
+    <string name="perm_all_granted">All permissions are active and ready</string>
+    <string name="perm_action_required">Action required: complete setup below</string>
+    <string name="badge_granted">Granted</string>
+    <string name="badge_required">Required</string>
+    <string name="badge_optional">Optional</string>
+    <string name="perm_core_title">Core Runtime Permissions</string>
+    <string name="perm_core_desc">Phone state, microphone, contacts, call log, notifications, and Bluetooth connection.</string>
+    <string name="perm_notification_title">Notification Access</string>
+    <string name="perm_notification_desc">Required to detect caller ID from Truecaller and VoIP calls (WhatsApp, Instagram, etc.).</string>
+    <string name="perm_overlay_title">Display Over Other Apps</string>
+    <string name="perm_overlay_desc">Required for microphone access and active call overlay on Android 14+.</string>
+    <string name="perm_screening_title">Reliable Caller ID (Call Screening)</string>
+    <string name="perm_screening_desc">Retrieves caller numbers accurately on Android 10+ without blocking or filtering calls.</string>
+    <string name="perm_rationale_title">Why these permissions?</string>
+    <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.\n\nAll voice and call processing is performed entirely on-device. No personal call data, contacts, or voice audio is collected or transmitted.</string>
     <string name="setup_status">Setup: %1$d / %2$d completed</string>
     <string name="btn_grant_permissions">Grant permissions</string>
-    <string name="btn_notification_access">Open notification access (for Truecaller)</string>
-    <string name="btn_overlay_permission">Allow display over other apps</string>
-    <string name="btn_call_screening_role">Enable reliable caller ID</string>
+    <string name="btn_notification_access">Open notification access</string>
+    <string name="btn_overlay_permission">Allow display overlay</string>
+    <string name="btn_call_screening_role">Enable call screening role</string>
     <string name="call_screening_role_hint">Enables the phone number for saved-contact identification even when the system hides it from broadcast receivers.</string>
     <string name="call_screening_role_granted">Reliable caller ID: enabled</string>
     <string name="call_screening_role_not_granted">Reliable caller ID: not enabled</string>
     <string name="call_screening_role_requires">Reliable caller ID requires Android 10 or newer</string>
-    <string name="btn_test_bluetooth">Test Bluetooth announcement</string>
 
-    <!-- Test button -->
+    <!-- Tools Tab UI -->
+    <string name="tools_title">Tools &amp; Diagnostics</string>
+    <string name="tools_section_bt_title">Bluetooth Audio Test</string>
+    <string name="tools_section_bt_desc">Simulate an incoming call announcement through connected Bluetooth earphones or headset.</string>
+    <string name="tools_section_debug_title">Truecaller Diagnostics</string>
+    <string name="tools_section_debug_desc">Inspect accessibility events, live overlay dumps, and speech command detection.</string>
+    <string name="btn_test_bluetooth">Test Bluetooth announcement</string>
     <string name="test_bt_not_connected">Connect Bluetooth earphones first</string>
     <string name="test_bt_starting">Testing Bluetooth announcement…</string>
     <string name="test_bt_sco_failed">Bluetooth audio connection failed</string>
@@ -61,4 +86,10 @@
     <string name="overlay_mic_off">Mic: off</string>
     <string name="overlay_mic_blocked">Mic: blocked by system</string>
     <string name="overlay_debug_text_desc">Speech recognizer output</string>
+
+    <!-- Truecaller Accessibility & Debug Console -->
+    <string name="truecaller_a11y_label">VCA Truecaller Debug</string>
+    <string name="truecaller_a11y_description">Observes Truecaller overlay for caller ID announcements.</string>
+    <string name="debug_console_title">Truecaller Debug Console</string>
+    <string name="btn_debug_console">🔬 Open Truecaller Debug Console</string>
 </resources>

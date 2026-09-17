@@ -36,6 +36,10 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import android.content.Context
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
+import com.callhandler.service.debug.DebugLogStore
 
 /**
  * Foreground orchestrator for one incoming-call session.
@@ -66,6 +70,9 @@ class CallHandlerService : Service() {
     private var fgsMicGranted = false
     private var currentIdentity: CallerIdentity = CallerIdentity.unknown(null)
 
+    @Suppress("DEPRECATION")
+    private var phoneStateListener: PhoneStateListener? = null
+
     override fun onCreate() {
         super.onCreate()
         settings = SettingsManager(this)
@@ -86,6 +93,7 @@ class CallHandlerService : Service() {
                 }
             }
         )
+        registerPhoneStateListener()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -349,6 +357,7 @@ class CallHandlerService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterPhoneStateListener()
         audioRouter.stopCallVolumeHold()
         stopSession()
         announcer.shutdown()
@@ -538,6 +547,47 @@ class CallHandlerService : Service() {
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
+    }
+
+    // ------------------------------------------ PhoneStateListener (parallel number source)
+
+    /**
+     * Registers an in-process PhoneStateListener as a parallel number source.
+     * This listener receives call state changes (including the phone number on
+     * API < 31) directly from the TelephonyRegistry, which may deliver the
+     * number even when the PHONE_STATE broadcast omits it.
+     */
+    @Suppress("DEPRECATION")
+    private fun registerPhoneStateListener() {
+        val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        if (telephonyManager == null) {
+            Log.w(TAG, "TelephonyManager not available - PhoneStateListener not registered")
+            return
+        }
+        val listener = object : PhoneStateListener() {
+            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                if (state == TelephonyManager.CALL_STATE_RINGING && !phoneNumber.isNullOrBlank()) {
+                    Log.d(TAG, "PhoneStateListener: RINGING with number (length=${phoneNumber.length})")
+                    DebugLogStore.log("CALLER_ID", "PHONE_STATE_LISTENER = number received")
+                    scope.launch(Dispatchers.IO) {
+                        identityManager.onIncomingNumber(phoneNumber, "PHONE_STATE_LISTENER")
+                    }
+                }
+            }
+        }
+        phoneStateListener = listener
+        telephonyManager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
+        Log.d(TAG, "PhoneStateListener registered as parallel number source")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun unregisterPhoneStateListener() {
+        phoneStateListener?.let { listener ->
+            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+            telephonyManager?.listen(listener, PhoneStateListener.LISTEN_NONE)
+            Log.d(TAG, "PhoneStateListener unregistered")
+        }
+        phoneStateListener = null
     }
 
     companion object {

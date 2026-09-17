@@ -13,10 +13,26 @@ object VoipCallDetector {
 
     private const val TAG = "VoipCallDetector"
 
-    /** Explicit ringing language accepted only from notification boilerplate fields. */
+    /** Explicit incoming language accepted only from notification boilerplate fields. */
     private val EXPLICIT_INCOMING_CALL_HINT = Regex(
         "\\b(incoming(?:\\s+(?:voice|audio|video))?\\s+call|" +
             "incoming|ringing|is\\s+calling|calling\\s+you)\\b",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Outgoing setup language. Evaluated before all incoming heuristics. */
+    private val EXPLICIT_OUTGOING_CALL_HINT = Regex(
+        "(?:^\\s*calling(?:\\s|…|\\.{3}|$)|" +
+            "\\b(?:dial(?:l)?ing|outgoing(?:\\s+(?:voice|audio|video))?\\s+call|" +
+            "placing\\s+(?:a\\s+)?call)\\b)",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Connected/finished states must never start a caller announcement. */
+    private val NON_RINGING_CALL_HINT = Regex(
+        "\\b(ongoing\\s+call|call\\s+in\\s+progress|connected|reconnecting|" +
+            "call\\s+ended|missed(?:\\s+(?:voice|video))?\\s+call|declined|" +
+            "busy|unavailable|not\\s+answered|cancelled|canceled)\\b",
         RegexOption.IGNORE_CASE
     )
 
@@ -174,7 +190,9 @@ object VoipCallDetector {
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
         val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
-        val combined = "$title $text".lowercase()
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty()
+        val combined = "$title $text $subText $bigText"
+        val combinedLower = combined.lowercase()
         val template = extras.getString(Notification.EXTRA_TEMPLATE).orEmpty()
 
         // MessagingStyle is Android's structural signal for a chat/message
@@ -188,8 +206,23 @@ object VoipCallDetector {
         val hasFullScreenIntent = notification.fullScreenIntent != null
         val hasStructuralCallSignal = isCallCategory || hasFullScreenIntent
 
-        // Reject known non-call states before accepting any textual fallback.
-        val hasNoiseHint = config.noiseHints.any { combined.contains(it) }
+        // Direction/state rejection MUST happen before CATEGORY_CALL or a
+        // full-screen intent is considered. WhatsApp uses call notifications
+        // for outgoing, connecting and active calls too.
+        if (listOf(title, text, subText, bigText).any {
+                EXPLICIT_OUTGOING_CALL_HINT.containsMatchIn(it)
+            }
+        ) {
+            Log.i(TAG, "VoipDetect: REJECTED_OUTGOING (${config.displayName}): '$title' / '$text'")
+            return null
+        }
+        if (NON_RINGING_CALL_HINT.containsMatchIn(combined)) {
+            Log.d(TAG, "VoipDetect: REJECTED_NON_RINGING (${config.displayName}): '$title' / '$text'")
+            return null
+        }
+
+        // Reject known non-call states before accepting any incoming evidence.
+        val hasNoiseHint = config.noiseHints.any { combinedLower.contains(it) }
         if (hasNoiseHint) {
             Log.d(TAG, "VoipDetect: REJECTED_NOISE (${config.displayName}): '$title' / '$text'")
             return null
@@ -205,19 +238,30 @@ object VoipCallDetector {
             return null
         }
 
-        // Some OEM/app versions omit CATEGORY_CALL. Their fallback must use
-        // explicit ringing language from boilerplate fields only; arbitrary
-        // chat message bodies are deliberately excluded.
-        val boilerplate = "$title $subText"
-        val hasExplicitCallHint = EXPLICIT_INCOMING_CALL_HINT.containsMatchIn(boilerplate)
-        if (!hasStructuralCallSignal && !hasExplicitCallHint) {
-            Log.d(
+        // CATEGORY_CALL and fullScreenIntent prove only that this is call
+        // related; they do not prove direction. Require positive incoming
+        // evidence from unambiguous language or Answer/Decline actions.
+        val boilerplate = "$title $text $subText $bigText"
+        val hasExplicitIncomingHint =
+            EXPLICIT_INCOMING_CALL_HINT.containsMatchIn(boilerplate)
+        val hasIncomingAction = notification.actions.orEmpty().any { action ->
+            val actionTitle = action.title?.toString().orEmpty()
+            actionTitle.contains("answer", ignoreCase = true) ||
+                actionTitle.contains("decline", ignoreCase = true)
+        }
+        if (!hasExplicitIncomingHint && !hasIncomingAction) {
+            Log.i(
                 TAG,
-                "VoipDetect: REJECTED_NO_CALL_SIGNAL (${config.displayName}, " +
+                "VoipDetect: REJECTED_UNKNOWN_DIRECTION (${config.displayName}, " +
                     "category=${notification.category}, fullScreen=$hasFullScreenIntent)"
             )
             return null
         }
+
+        // Incoming evidence without call structure is accepted for OEM/app
+        // versions that omit CATEGORY_CALL, but arbitrary call-related text is not.
+        val hasIncomingEvidence = hasExplicitIncomingHint || hasIncomingAction
+        if (!hasStructuralCallSignal && !hasIncomingEvidence) return null
 
         val videoFields = "$title $text $subText".lowercase()
         val isVideo = config.videoHints.any { videoFields.contains(it) }
@@ -229,9 +273,9 @@ object VoipCallDetector {
 
         Log.i(
             TAG,
-            "VoipDetect: ACCEPTED ${config.displayName} $callType from '$callerName' " +
+            "VoipDetect: ACCEPTED_INCOMING ${config.displayName} $callType from '$callerName' " +
                 "(category=${notification.category}, fullScreen=$hasFullScreenIntent, " +
-                "explicitHint=$hasExplicitCallHint)"
+                "explicitHint=$hasExplicitIncomingHint, incomingAction=$hasIncomingAction)"
         )
         return VoipCallInfo(
             appDisplayName = config.displayName,
