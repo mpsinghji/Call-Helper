@@ -3,27 +3,72 @@ package com.callhandler.service.identity
 import android.app.Notification
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.callhandler.service.debug.DebugLogStore
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Call direction for VoIP notifications.
+ */
+enum class VoipCallDirection {
+    INCOMING,
+    OUTGOING,
+    UNKNOWN
+}
+
+/**
+ * Call state for VoIP notifications.
+ */
+enum class VoipCallState {
+    INCOMING_RINGING,
+    INCOMING_ACTIVE,
+    OUTGOING_DIALING,
+    OUTGOING_RINGING,
+    OUTGOING_ACTIVE,
+    ENDED,
+    UNKNOWN
+}
+
+/**
+ * Active VoIP session data tracked per notification key.
+ */
+data class VoipSession(
+    val key: String,
+    val packageName: String,
+    var direction: VoipCallDirection,
+    var state: VoipCallState,
+    var identity: String?,
+    var announced: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 /**
  * Detects incoming VoIP calls from messaging apps by parsing their
- * notifications. Returns a [VoipCallInfo] if the notification looks
- * like an incoming call, or null otherwise.
+ * notifications and tracking session direction.
+ *
+ * Rules:
+ * - INCOMING → announcement allowed (initial ringing only)
+ * - OUTGOING → announcement forbidden
+ * - UNKNOWN  → announcement forbidden (fail-closed)
  */
 object VoipCallDetector {
 
     private const val TAG = "VoipCallDetector"
 
-    /** Explicit incoming language accepted only from notification boilerplate fields. */
+    /** Active sessions keyed by notification key (e.g. sbn.key). */
+    private val activeSessions = ConcurrentHashMap<String, VoipSession>()
+
+    /** Explicit incoming language accepted from notification boilerplate fields. */
     private val EXPLICIT_INCOMING_CALL_HINT = Regex(
         "\\b(incoming(?:\\s+(?:voice|audio|video))?\\s+call|" +
-            "incoming|ringing|is\\s+calling|calling\\s+you)\\b",
+            "incoming(?:\\s+(?:voice|audio|video))?|" +
+            "is\\s+calling|calling\\s+you)\\b",
         RegexOption.IGNORE_CASE
     )
 
-    /** Outgoing setup language. Evaluated before all incoming heuristics. */
+    /** Outgoing setup language. Evaluated before incoming heuristics. */
     private val EXPLICIT_OUTGOING_CALL_HINT = Regex(
         "(?:^\\s*calling(?:\\s|…|\\.{3}|$)|" +
-            "\\b(?:dial(?:l)?ing|outgoing(?:\\s+(?:voice|audio|video))?\\s+call|" +
+            "\\b(?:dial(?:l)?ing|connecting|outgoing(?:\\s+(?:voice|audio|video))?\\s+call|" +
             "placing\\s+(?:a\\s+)?call)\\b)",
         RegexOption.IGNORE_CASE
     )
@@ -36,6 +81,9 @@ object VoipCallDetector {
         RegexOption.IGNORE_CASE
     )
 
+    /** Duration timer indicating an active/connected call (e.g. "0:01", "12:45"). */
+    private val DURATION_TIMESTAMP_REGEX = Regex("^\\d{1,2}:\\d{2}(?::\\d{2})?$")
+
     /** Discord chat text commonly follows "sender: message". */
     private val DISCORD_MESSAGE_TEXT = Regex("^.{1,40}:\\s+.+$")
 
@@ -46,12 +94,16 @@ object VoipCallDetector {
      * @param callType        "voice call", "video call", or "call"
      * @param callerName      Name extracted from the notification
      * @param packageName     Original package name
+     * @param direction       Direction (INCOMING, OUTGOING, UNKNOWN)
+     * @param state           Call state
      */
     data class VoipCallInfo(
         val appDisplayName: String,
         val callType: String,
         val callerName: String,
-        val packageName: String
+        val packageName: String,
+        val direction: VoipCallDirection = VoipCallDirection.INCOMING,
+        val state: VoipCallState = VoipCallState.INCOMING_RINGING
     ) {
         /** e.g. "WhatsApp voice call from John" */
         fun toAnnouncementText(): String =
@@ -180,7 +232,8 @@ object VoipCallDetector {
     /**
      * Attempts to detect a VoIP call from the given notification.
      *
-     * @return [VoipCallInfo] if this looks like an incoming call, null otherwise.
+     * @return [VoipCallInfo] if this is confirmed to be an incoming ringing call
+     *         that has not yet been announced; null otherwise.
      */
     fun detect(sbn: StatusBarNotification): VoipCallInfo? {
         val config = appConfigMap[sbn.packageName] ?: return null
@@ -195,103 +248,227 @@ object VoipCallDetector {
         val combinedLower = combined.lowercase()
         val template = extras.getString(Notification.EXTRA_TEMPLATE).orEmpty()
 
-        // MessagingStyle is Android's structural signal for a chat/message
-        // notification. Never infer a call from words inside its message body.
+        // 1. MessagingStyle is Android's structural signal for chat messages
         if (template.endsWith("MessagingStyle")) {
             Log.d(TAG, "VoipDetect: REJECTED_MESSAGING_STYLE (${config.displayName})")
             return null
         }
 
+        // 2. Reject known noise hints (backup, missed, declined, etc.)
+        if (config.noiseHints.any { combinedLower.contains(it) }) {
+            logDecision(sbn, config, title, text, VoipCallDirection.UNKNOWN, VoipCallState.ENDED, null, false, "REJECTED_NOISE")
+            return null
+        }
+
+        // 3. Discord message format check
         val isCallCategory = notification.category == Notification.CATEGORY_CALL
         val hasFullScreenIntent = notification.fullScreenIntent != null
         val hasStructuralCallSignal = isCallCategory || hasFullScreenIntent
-
-        // Direction/state rejection MUST happen before CATEGORY_CALL or a
-        // full-screen intent is considered. WhatsApp uses call notifications
-        // for outgoing, connecting and active calls too.
-        if (listOf(title, text, subText, bigText).any {
-                EXPLICIT_OUTGOING_CALL_HINT.containsMatchIn(it)
-            }
-        ) {
-            Log.i(TAG, "VoipDetect: REJECTED_OUTGOING (${config.displayName}): '$title' / '$text'")
-            return null
-        }
-        if (NON_RINGING_CALL_HINT.containsMatchIn(combined)) {
-            Log.d(TAG, "VoipDetect: REJECTED_NON_RINGING (${config.displayName}): '$title' / '$text'")
-            return null
-        }
-
-        // Reject known non-call states before accepting any incoming evidence.
-        val hasNoiseHint = config.noiseHints.any { combinedLower.contains(it) }
-        if (hasNoiseHint) {
-            Log.d(TAG, "VoipDetect: REJECTED_NOISE (${config.displayName}): '$title' / '$text'")
-            return null
-        }
-
-        // Discord channel messages commonly use "#channel" as the title and
-        // "sender: message" as text. Reject that shape unless Android itself
-        // marks the notification as an active incoming call.
         val looksLikeDiscordMessage = config.packageName == "com.discord" &&
             (title.contains('#') || DISCORD_MESSAGE_TEXT.matches(text.trim()))
         if (!hasStructuralCallSignal && looksLikeDiscordMessage) {
-            Log.d(TAG, "VoipDetect: REJECTED_DISCORD_MESSAGE: '$title' / '$text'")
             return null
         }
 
-        // CATEGORY_CALL and fullScreenIntent prove only that this is call
-        // related; they do not prove direction. Require positive incoming
-        // evidence from unambiguous language or Answer/Decline actions.
-        val boilerplate = "$title $text $subText $bigText"
-        val hasExplicitIncomingHint =
-            EXPLICIT_INCOMING_CALL_HINT.containsMatchIn(boilerplate)
-        val hasIncomingAction = notification.actions.orEmpty().any { action ->
-            val actionTitle = action.title?.toString().orEmpty()
-            actionTitle.contains("answer", ignoreCase = true) ||
-                actionTitle.contains("decline", ignoreCase = true)
+        // 4. Action inspection
+        val actions = notification.actions.orEmpty()
+        val hasAnswerAction = actions.any { action ->
+            val actionTitle = action.title?.toString().orEmpty().lowercase()
+            action.semanticAction == 1 || // Notification.Action.SEMANTIC_ACTION_ANSWER
+                actionTitle.contains("answer") ||
+                actionTitle.contains("accept") ||
+                actionTitle.contains("receive")
         }
-        if (!hasExplicitIncomingHint && !hasIncomingAction) {
-            Log.i(
-                TAG,
-                "VoipDetect: REJECTED_UNKNOWN_DIRECTION (${config.displayName}, " +
-                    "category=${notification.category}, fullScreen=$hasFullScreenIntent)"
+        val hasHangUpAction = actions.any { action ->
+            val actionTitle = action.title?.toString().orEmpty().lowercase()
+            action.semanticAction == 2 || // Notification.Action.SEMANTIC_ACTION_REJECT
+                actionTitle.contains("decline") ||
+                actionTitle.contains("reject") ||
+                actionTitle.contains("end call") ||
+                actionTitle.contains("hang up") ||
+                actionTitle.contains("cancel") ||
+                actionTitle == "end"
+        }
+
+        // 5. System CallStyle extra checks (API 31+)
+        val callTypeExtra = extras.getInt(Notification.EXTRA_CALL_TYPE, -1)
+            .takeIf { it != -1 } ?: extras.getInt("android.callType", -1)
+        val hasAnswerIntent = extras.containsKey("android.answerIntent")
+
+        // 6. Check existing session for this notification key
+        val existingSession = activeSessions[sbn.key]
+
+        // --- SESSION LOCK: Once OUTGOING, stay OUTGOING ---
+        if (existingSession != null && existingSession.direction == VoipCallDirection.OUTGOING) {
+            val updatedState = when {
+                DURATION_TIMESTAMP_REGEX.matches(text.trim()) || NON_RINGING_CALL_HINT.containsMatchIn(combined) ->
+                    VoipCallState.OUTGOING_ACTIVE
+                text.contains("ringing", ignoreCase = true) ->
+                    VoipCallState.OUTGOING_RINGING
+                else ->
+                    VoipCallState.OUTGOING_DIALING
+            }
+            existingSession.state = updatedState
+            logDecision(sbn, config, title, text, VoipCallDirection.OUTGOING, updatedState, existingSession.identity, false, "OUTGOING_CALL")
+            return null
+        }
+
+        // --- OUTGOING DETECTION ---
+        val matchesExplicitOutgoing = listOf(title, text, subText, bigText).any {
+            EXPLICIT_OUTGOING_CALL_HINT.containsMatchIn(it)
+        }
+        val isRingingWithoutAnswer = text.contains("ringing", ignoreCase = true) &&
+            !hasAnswerAction && !hasAnswerIntent &&
+            !EXPLICIT_INCOMING_CALL_HINT.containsMatchIn(combined)
+        val isOutgoingCallStyle = callTypeExtra == 2 // CallStyle.CALL_TYPE_OUTGOING
+
+        if (matchesExplicitOutgoing || isRingingWithoutAnswer || isOutgoingCallStyle) {
+            val callerName = extractCallerName(title, text, config)
+            val state = if (text.contains("ringing", ignoreCase = true)) {
+                VoipCallState.OUTGOING_RINGING
+            } else {
+                VoipCallState.OUTGOING_DIALING
+            }
+            activeSessions[sbn.key] = VoipSession(
+                key = sbn.key,
+                packageName = sbn.packageName,
+                direction = VoipCallDirection.OUTGOING,
+                state = state,
+                identity = callerName
             )
+            logDecision(sbn, config, title, text, VoipCallDirection.OUTGOING, state, callerName, false, "OUTGOING_CALL")
             return null
         }
 
-        // Incoming evidence without call structure is accepted for OEM/app
-        // versions that omit CATEGORY_CALL, but arbitrary call-related text is not.
-        val hasIncomingEvidence = hasExplicitIncomingHint || hasIncomingAction
-        if (!hasStructuralCallSignal && !hasIncomingEvidence) return null
-
-        val videoFields = "$title $text $subText".lowercase()
-        val isVideo = config.videoHints.any { videoFields.contains(it) }
-        val callType = if (isVideo) "video call" else "voice call"
-        val callerName = extractCallerName(title, text, config) ?: run {
-            Log.d(TAG, "VoipDetect: REJECTED_NO_CALLER_NAME (${config.displayName})")
+        // --- ACTIVE / CONNECTED / NON-RINGING DETECTION ---
+        val isNonRinging = DURATION_TIMESTAMP_REGEX.matches(text.trim()) ||
+            NON_RINGING_CALL_HINT.containsMatchIn(combined) ||
+            callTypeExtra == 3 // CallStyle.CALL_TYPE_ONGOING
+        if (isNonRinging) {
+            val state = if (existingSession?.direction == VoipCallDirection.INCOMING) {
+                VoipCallState.INCOMING_ACTIVE
+            } else {
+                VoipCallState.UNKNOWN
+            }
+            if (existingSession != null) existingSession.state = state
+            logDecision(sbn, config, title, text, existingSession?.direction ?: VoipCallDirection.UNKNOWN, state, existingSession?.identity, false, "NON_RINGING_CALL")
             return null
         }
 
-        Log.i(
-            TAG,
-            "VoipDetect: ACCEPTED_INCOMING ${config.displayName} $callType from '$callerName' " +
-                "(category=${notification.category}, fullScreen=$hasFullScreenIntent, " +
-                "explicitHint=$hasExplicitIncomingHint, incomingAction=$hasIncomingAction)"
+        // --- INCOMING DETECTION ---
+        val hasExplicitIncomingHint = EXPLICIT_INCOMING_CALL_HINT.containsMatchIn(combined)
+        val isIncomingCallStyle = callTypeExtra == 1 // CallStyle.CALL_TYPE_INCOMING
+        val hasPositiveIncomingEvidence = hasAnswerAction || hasAnswerIntent || isIncomingCallStyle || hasExplicitIncomingHint
+
+        if (hasPositiveIncomingEvidence) {
+            val callerName = extractCallerName(title, text, config) ?: run {
+                logDecision(sbn, config, title, text, VoipCallDirection.INCOMING, VoipCallState.INCOMING_RINGING, null, false, "REJECTED_NO_CALLER_NAME")
+                return null
+            }
+
+            val session = activeSessions.getOrPut(sbn.key) {
+                VoipSession(
+                    key = sbn.key,
+                    packageName = sbn.packageName,
+                    direction = VoipCallDirection.INCOMING,
+                    state = VoipCallState.INCOMING_RINGING,
+                    identity = callerName
+                )
+            }
+
+            if (session.announced) {
+                logDecision(sbn, config, title, text, VoipCallDirection.INCOMING, VoipCallState.INCOMING_RINGING, callerName, false, "ALREADY_ANNOUNCED")
+                return null
+            }
+
+            session.announced = true
+            logDecision(sbn, config, title, text, VoipCallDirection.INCOMING, VoipCallState.INCOMING_RINGING, callerName, true, "INCOMING_CALL")
+
+            val videoFields = "$title $text $subText".lowercase()
+            val isVideo = config.videoHints.any { videoFields.contains(it) }
+            val callType = if (isVideo) "video call" else "voice call"
+
+            return VoipCallInfo(
+                appDisplayName = config.displayName,
+                callType = callType,
+                callerName = callerName,
+                packageName = sbn.packageName,
+                direction = VoipCallDirection.INCOMING,
+                state = VoipCallState.INCOMING_RINGING
+            )
+        }
+
+        // --- FAIL-CLOSED FOR UNKNOWN DIRECTION ---
+        logDecision(sbn, config, title, text, VoipCallDirection.UNKNOWN, VoipCallState.UNKNOWN, null, false, "NO_POSITIVE_INCOMING_EVIDENCE")
+        return null
+    }
+
+    /**
+     * Clean up session tracking when notification is removed.
+     */
+    fun onNotificationRemoved(sbn: StatusBarNotification) {
+        val session = activeSessions.remove(sbn.key)
+        if (session != null) {
+            val title = session.identity.orEmpty()
+            logDecision(
+                sbn = sbn,
+                config = appConfigMap[sbn.packageName] ?: AppConfig(sbn.packageName, sbn.packageName, emptyList()),
+                title = title,
+                text = "Call removed",
+                direction = session.direction,
+                state = VoipCallState.ENDED,
+                identity = session.identity,
+                allowed = false,
+                reason = "NOTIFICATION_REMOVED"
+            )
+        }
+    }
+
+    /**
+     * Clear all sessions (e.g. for unit tests or app reset).
+     */
+    fun clearSessions() {
+        activeSessions.clear()
+    }
+
+    private fun logDecision(
+        sbn: StatusBarNotification,
+        config: AppConfig,
+        title: String,
+        text: String,
+        direction: VoipCallDirection,
+        state: VoipCallState,
+        identity: String?,
+        allowed: Boolean,
+        reason: String
+    ) {
+        val category = sbn.notification.category ?: "null"
+        val fullScreen = sbn.notification.fullScreenIntent != null
+        val normalized = "$title $text".trim()
+
+        val lines = listOf(
+            "package=${sbn.packageName}",
+            "event=POSTED",
+            "category=$category",
+            "title=\"$title\"",
+            "text=\"$text\"",
+            "fullScreenIntent=$fullScreen",
+            "normalizedText=\"$normalized\"",
+            "direction=$direction",
+            "state=$state",
+            "identity=\"${identity.orEmpty()}\"",
+            "ANNOUNCEMENT=${if (allowed) "ALLOWED" else "BLOCKED"}",
+            "reason=$reason"
         )
-        return VoipCallInfo(
-            appDisplayName = config.displayName,
-            callType = callType,
-            callerName = callerName,
-            packageName = sbn.packageName
-        )
+
+        for (line in lines) {
+            Log.i(TAG, "[VOIP] $line")
+            DebugLogStore.log("VOIP", line)
+        }
     }
 
     /**
      * Extract the caller name from notification fields.
-     *
-     * Most VoIP apps put the caller name in the title and the call
-     * description ("Incoming voice call") in the text. Some apps
-     * reverse this. We pick whichever field does NOT look like a
-     * boilerplate call description.
      */
     private fun extractCallerName(
         title: String,
@@ -317,7 +494,7 @@ object VoipCallDetector {
         }.trim()
 
         if (candidate.isEmpty()) return null
-        if (candidate.length > 80) return null  // probably not a name
+        if (candidate.length > 80) return null
         return candidate
     }
 }

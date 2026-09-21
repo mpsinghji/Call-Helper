@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.graphics.Rect
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -56,31 +57,45 @@ class TruecallerAccessibilityService : AccessibilityService() {
 
         // 1. Traverse and log the source node
         val source = event.source
+        var parsed: TruecallerParsedInfo? = null
         if (source != null) {
             log("EVENT", "--- Source node tree ---")
             traverseNode(source, depth = 0)
 
             // Parse for caller identity
-            val parsed = TruecallerParser.parse(source)
+            parsed = TruecallerParser.parse(source)
             if (parsed != null) {
                 handleParsedCallerInfo(parsed)
             }
             source.recycle()
         }
 
-        // 2. Also check rootInActiveWindow if source didn't provide a full tree
-        val root = try { rootInActiveWindow } catch (_: Exception) { null }
-        if (root != null) {
-            val parsed = TruecallerParser.parse(root)
-            if (parsed != null) {
-                handleParsedCallerInfo(parsed)
+        // 2. Only check rootInActiveWindow if source didn't yield a caller-ID result
+        if (parsed == null) {
+            val root = try { rootInActiveWindow } catch (_: Exception) { null }
+            if (root != null) {
+                parsed = TruecallerParser.parse(root)
+                if (parsed != null) {
+                    handleParsedCallerInfo(parsed)
+                }
+                root.recycle()
             }
-            root.recycle()
         }
     }
 
     private fun handleParsedCallerInfo(info: TruecallerParsedInfo) {
         val announcement = info.announcementName ?: return
+        val now = SystemClock.uptimeMillis()
+
+        // Debounce: Suppress duplicate events for the same caller within DEBOUNCE_WINDOW_MS
+        if (announcement == lastParsedAnnouncement && (now - lastParsedTimestamp < DEBOUNCE_WINDOW_MS)) {
+            Log.d(TAG, "Suppressed duplicate Truecaller caller-ID: '$announcement'")
+            return
+        }
+
+        lastParsedAnnouncement = announcement
+        lastParsedTimestamp = now
+
         _lastParsedCallerInfo.value = info
         log("CALLER_ID", "TRUECALLER OVERLAY MATCH -> $announcement")
         Log.i(TAG, "Parsed Truecaller info: $announcement")
@@ -272,6 +287,17 @@ class TruecallerAccessibilityService : AccessibilityService() {
         private const val TAG = "TruecallerA11y"
         const val TRUECALLER_PACKAGE = "com.truecaller"
         private const val MAX_DEPTH = 30
+        private const val DEBOUNCE_WINDOW_MS = 4000L
+
+        @Volatile
+        private var lastParsedAnnouncement: String? = null
+        @Volatile
+        private var lastParsedTimestamp: Long = 0L
+
+        fun resetDeduplication() {
+            lastParsedAnnouncement = null
+            lastParsedTimestamp = 0L
+        }
 
         @Volatile
         var instance: TruecallerAccessibilityService? = null

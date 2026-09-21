@@ -287,6 +287,7 @@ class CallerIdentityManager(private val context: Context) {
         pendingResolve = null
         _identity.value = null
         TruecallerAccessibilityService.onCallerInfoDetected = null
+        TruecallerAccessibilityService.resetDeduplication()
     }
 
     // -------------------------------------------------- call log ContentObserver
@@ -348,13 +349,29 @@ class CallerIdentityManager(private val context: Context) {
      * (e.g. search bar hint, feature descriptions) rather than a caller name.
      */
     private fun isTruecallerUIText(text: String): Boolean {
-        val lower = text.lowercase()
-        return lower.contains("search numbers") ||
-               lower.contains("names & more") ||
-               lower.contains("get truecaller") ||
-               lower.contains("identify unknown") ||
-               lower.contains("block spam") ||
-               lower.contains("who called")
+        val clean = text.lowercase()
+            .removePrefix("spam call from ")
+            .removePrefix("spam call")
+            .trim()
+        return clean.contains("search numbers") ||
+               clean.contains("names & more") ||
+               clean.contains("get truecaller") ||
+               clean.contains("identify unknown") ||
+               clean.contains("block spam") ||
+               clean.contains("who called") ||
+               clean.contains("get started") ||
+               clean.contains("protect your family") ||
+               clean.contains("start free trial") ||
+               clean.contains("set as default") ||
+               clean.contains("terms of service") ||
+               clean.contains("privacy policy") ||
+               clean == "skip" ||
+               clean == "truecaller" ||
+               clean == "calls" ||
+               clean == "messages" ||
+               clean == "contacts" ||
+               clean == "premium" ||
+               clean == "assistant"
     }
 
     private suspend fun lookupContact(number: String): String? =

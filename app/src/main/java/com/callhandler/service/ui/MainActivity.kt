@@ -1,250 +1,109 @@
 package com.callhandler.service.ui
 
-import android.app.role.RoleManager
 import android.Manifest
-import android.content.ComponentName
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.widget.Button
-import android.widget.TextView
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
+import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceFragmentCompat
+import androidx.viewpager2.adapter.FragmentStateAdapter
+import androidx.viewpager2.widget.ViewPager2
 import com.callhandler.service.R
-import com.callhandler.service.audio.AnnouncementManager
-import com.callhandler.service.audio.AudioRouter
-import com.callhandler.service.debug.DebugConsoleActivity
-import com.callhandler.service.identity.CallNotificationListener
-import com.callhandler.service.settings.SettingsManager
-import kotlinx.coroutines.launch
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.tabs.TabLayout
+import com.google.android.material.tabs.TabLayoutMediator
 
 /**
- * Hosts the settings screen, permission walkthrough, and a BT announcement
- * test button.
+ * Hosts the tabbed interface:
+ * - Tab 0: Settings (Main app configuration)
+ * - Tab 1: Permissions (Dedicated permission management & setup)
+ * - Tab 2: Tools (Bluetooth announcement test & debug console)
  */
 class MainActivity : AppCompatActivity() {
 
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            refreshPermissionState()
-        }
-
-    private val callScreeningRoleLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            updateCallScreeningRoleUi()
-        }
-
-    private lateinit var grantButton: Button
-    private lateinit var callScreeningRoleButton: Button
-    private lateinit var callScreeningHintText: TextView
-    private var testAnnouncer: AnnouncementManager? = null
-    private var testAudioRouter: AudioRouter? = null
+    private lateinit var tabLayout: TabLayout
+    private lateinit var viewPager: ViewPager2
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        findViewById<TextView>(R.id.rationaleText).setText(R.string.perm_rationale)
+        val toolbar = findViewById<MaterialToolbar>(R.id.topAppBar)
+        setSupportActionBar(toolbar)
 
-        grantButton = findViewById(R.id.grantPermissionsButton)
-        grantButton.setOnClickListener { requestRuntimePermissions() }
+        tabLayout = findViewById(R.id.tabLayout)
+        viewPager = findViewById(R.id.viewPager)
 
-        findViewById<Button>(R.id.notificationAccessButton).setOnClickListener {
-            openNotificationListenerSettings()
-        }
+        val adapter = MainPagerAdapter(this)
+        viewPager.adapter = adapter
 
-        findViewById<Button>(R.id.overlayPermissionButton).setOnClickListener {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-            )
-        }
-
-        callScreeningRoleButton = findViewById(R.id.callScreeningRoleButton)
-        callScreeningRoleButton.setOnClickListener { requestCallScreeningRole() }
-        callScreeningHintText = findViewById(R.id.callScreeningHintText)
-        updateCallScreeningRoleUi()
-
-        findViewById<Button>(R.id.testBluetoothButton).setOnClickListener {
-            testBluetoothAnnouncement()
-        }
-
-        findViewById<Button>(R.id.debugConsoleButton).setOnClickListener {
-            startActivity(Intent(this, DebugConsoleActivity::class.java))
-        }
-
-        if (savedInstanceState == null) {
-            supportFragmentManager.beginTransaction()
-                .replace(R.id.settingsContainer, SettingsFragment())
-                .commit()
-        }
+        TabLayoutMediator(tabLayout, viewPager) { tab, position ->
+            tab.text = when (position) {
+                0 -> getString(R.string.tab_settings)
+                1 -> getString(R.string.tab_permissions)
+                2 -> getString(R.string.tab_tools)
+                else -> ""
+            }
+        }.attach()
     }
 
     override fun onResume() {
         super.onResume()
-        refreshPermissionState()
+        updatePermissionBadge()
     }
 
-    override fun onDestroy() {
-        testAnnouncer?.shutdown()
-        testAudioRouter?.cleanupAudio()
-        super.onDestroy()
-    }
-
-    // -------------------------------------------------- BT announcement test
-
-    private fun testBluetoothAnnouncement() {
-        val router = testAudioRouter ?: AudioRouter(this).also { testAudioRouter = it }
-
-        if (!router.isBluetoothAudioConnected()) {
-            Toast.makeText(
-                this,
-                getString(R.string.test_bt_not_connected),
-                Toast.LENGTH_LONG
-            ).show()
-            return
+    fun updatePermissionBadge() {
+        val allRequiredGranted = areAllRequiredPermissionsGranted()
+        val permTab = tabLayout.getTabAt(1) ?: return
+        if (!allRequiredGranted) {
+            val badge = permTab.orCreateBadge
+            badge.isVisible = true
+        } else {
+            permTab.removeBadge()
         }
+    }
 
-        val settings = SettingsManager(this)
-        val tts = testAnnouncer ?: AnnouncementManager(this, settings).also { testAnnouncer = it }
-
-        Toast.makeText(this, getString(R.string.test_bt_starting), Toast.LENGTH_SHORT).show()
-
-        lifecycleScope.launch {
-            val scoOk = router.connectBluetoothAudio()
-            if (!scoOk) {
-                Toast.makeText(
-                    this@MainActivity,
-                    getString(R.string.test_bt_sco_failed),
-                    Toast.LENGTH_LONG
-                ).show()
-                return@launch
+    private fun areAllRequiredPermissionsGranted(): Boolean {
+        val runtimePermissions = buildList {
+            add(Manifest.permission.READ_PHONE_STATE)
+            add(Manifest.permission.READ_CALL_LOG)
+            add(Manifest.permission.READ_CONTACTS)
+            add(Manifest.permission.RECORD_AUDIO)
+            add(Manifest.permission.ANSWER_PHONE_CALLS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
             }
-
-            try {
-                // Set MODE_IN_COMMUNICATION + slider-proportional volume (routes TTS through BT)
-                val shouldPlay = router.prepareForAnnouncement(
-                    settings.announcementVolumePct
-                )
-                if (shouldPlay) {
-                    tts.announce(getString(R.string.test_bt_announcement_text))
-                } else {
-                    Toast.makeText(
-                        this@MainActivity,
-                        getString(R.string.test_bt_volume_zero),
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            } finally {
-                router.finishAnnouncement()
-                router.disconnectBluetoothAudio()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
             }
-
-            Toast.makeText(
-                this@MainActivity,
-                getString(R.string.test_bt_done),
-                Toast.LENGTH_SHORT
-            ).show()
         }
-    }
 
-    // ----------------------------------------------------------- permissions
-
-    private fun requestRuntimePermissions() {
-        permissionLauncher.launch(getRuntimePermissions().toTypedArray())
-    }
-
-    private fun getRuntimePermissions(): List<String> = buildList {
-        add(Manifest.permission.READ_PHONE_STATE)
-        add(Manifest.permission.READ_CALL_LOG)
-        add(Manifest.permission.READ_CONTACTS)
-        add(Manifest.permission.RECORD_AUDIO)
-        add(Manifest.permission.ANSWER_PHONE_CALLS)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-
-    private fun allRuntimePermissionsGranted(): Boolean =
-        getRuntimePermissions().all {
+        val runtimeGranted = runtimePermissions.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
-
-    private fun refreshPermissionState() {
-        val runtimeGranted = allRuntimePermissionsGranted()
-        grantButton.isEnabled = !runtimeGranted
-
-        val listenerEnabled = NotificationManagerCompat
+        val notificationAccessGranted = NotificationManagerCompat
             .getEnabledListenerPackages(this)
             .contains(packageName)
-        findViewById<Button>(R.id.notificationAccessButton).isEnabled = !listenerEnabled
+        val overlayGranted = Settings.canDrawOverlays(this)
 
-        updateCallScreeningRoleUi()
-        val overlayEnabled = Settings.canDrawOverlays(this)
-        findViewById<Button>(R.id.overlayPermissionButton).isEnabled = !overlayEnabled
-
-        val completedSteps = listOf(runtimeGranted, listenerEnabled, overlayEnabled).count { it }
-        findViewById<TextView>(R.id.statusText).text =
-            getString(R.string.setup_status, completedSteps, 3)
+        return runtimeGranted && notificationAccessGranted && overlayGranted
     }
 
-    // ------------------------------------------- call-screening role (reliable caller ID)
+    private class MainPagerAdapter(activity: AppCompatActivity) : FragmentStateAdapter(activity) {
+        override fun getItemCount(): Int = 3
 
-    private fun requestCallScreeningRole() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            Toast.makeText(
-                this,
-                R.string.call_screening_role_requires,
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-        val roleManager = getSystemService(RoleManager::class.java) ?: return
-        callScreeningRoleLauncher.launch(
-            roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
-        )
-    }
-
-    private fun updateCallScreeningRoleUi() {
-        val granted = isCallScreeningRoleGranted()
-        callScreeningRoleButton.isEnabled = !granted
-        callScreeningHintText.setText(
-            if (granted) R.string.call_screening_role_granted
-            else R.string.call_screening_role_not_granted
-        )
-    }
-
-    private fun isCallScreeningRoleGranted(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
-        val roleManager = getSystemService(RoleManager::class.java) ?: return false
-        return roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
-    }
-
-    private fun openNotificationListenerSettings() {
-        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-        runCatching {
-            intent.putExtra(
-                "android.provider.extra.NOTIFICATION_LISTENER_COMPONENT_NAME",
-                ComponentName(this, CallNotificationListener::class.java).flattenToString()
-            )
-        }
-        runCatching { startActivity(intent) }
-            .onFailure {
-                runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        override fun createFragment(position: Int): Fragment {
+            return when (position) {
+                0 -> SettingsFragment()
+                1 -> PermissionsFragment()
+                2 -> ToolsFragment()
+                else -> throw IllegalArgumentException("Invalid tab index: $position")
             }
+        }
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {

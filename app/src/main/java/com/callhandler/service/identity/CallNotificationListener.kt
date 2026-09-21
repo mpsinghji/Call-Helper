@@ -44,6 +44,7 @@ class CallNotificationListener : NotificationListenerService() {
         // Clean up tracking when notification is dismissed (call ended/missed)
         if (sbn.packageName in VoipCallDetector.KNOWN_PACKAGES) {
             announcedVoipCalls.remove(sbn.key)
+            VoipCallDetector.onNotificationRemoved(sbn)
         }
     }
 
@@ -66,7 +67,7 @@ class CallNotificationListener : NotificationListenerService() {
 
         val callInfo = VoipCallDetector.detect(sbn)
         if (callInfo == null) {
-            Log.d(TAG, "Not a VoIP call: ${sbn.packageName} (${getNotifSummary(sbn)})")
+            Log.d(TAG, "VoIP announcement blocked or not a call: ${sbn.packageName} (${getNotifSummary(sbn)})")
             return
         }
 
