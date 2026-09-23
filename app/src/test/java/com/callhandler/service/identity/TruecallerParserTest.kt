@@ -162,4 +162,49 @@ class TruecallerParserTest {
         assertTrue(result?.isSpam == true)
         assertEquals("Spam call from ABC Telecom", result?.announcementName)
     }
+
+    @Test
+    fun testDirectIdTitle_extractsPavinderJasrotia() {
+        val titleNode = createMockNode(
+            text = "Pavinder Jasrotia",
+            viewId = "com.truecaller:id/title"
+        )
+        val carrierNode = createMockNode(
+            text = "Airtel · 098053 05407"
+        )
+        val root = createMockNode(
+            children = listOf(titleNode, carrierNode)
+        )
+
+        `when`(root.findAccessibilityNodeInfosByViewId("com.truecaller:id/title"))
+            .thenReturn(listOf(titleNode))
+
+        val result = TruecallerParser.parse(root)
+        assertEquals("Pavinder Jasrotia", result?.name)
+        assertEquals("098053 05407", result?.phoneNumber)
+        assertEquals("Pavinder Jasrotia", result?.announcementName)
+    }
+
+    @Test
+    fun testMetadataLabels_areNotExtractedAsName() {
+        val label1 = createMockNode(text = "First time caller")
+        val label2 = createMockNode(text = "Driver")
+        val label3 = createMockNode(text = "New")
+        val label4 = createMockNode(text = "Likely a business")
+        val label5 = createMockNode(text = "Himachal Pradesh India")
+        val titleNode = createMockNode(
+            text = "Pavinder Jasrotia",
+            viewId = "com.truecaller:id/title"
+        )
+        val root = createMockNode(
+            children = listOf(titleNode, label1, label2, label3, label4, label5)
+        )
+
+        `when`(root.findAccessibilityNodeInfosByViewId("com.truecaller:id/title"))
+            .thenReturn(listOf(titleNode))
+
+        val result = TruecallerParser.parse(root)
+        assertEquals("Pavinder Jasrotia", result?.name)
+        assertEquals("Pavinder Jasrotia", result?.announcementName)
+    }
 }

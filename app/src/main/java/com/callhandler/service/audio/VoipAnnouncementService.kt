@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.callhandler.service.App
 import com.callhandler.service.R
+import com.callhandler.service.debug.CallDebugTracker
 import com.callhandler.service.settings.SettingsManager
 import com.callhandler.service.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -92,12 +93,14 @@ class VoipAnnouncementService : Service() {
     private suspend fun announceViaBluetooth(text: String) {
         if (!audioRouter.isBluetoothAudioConnected()) {
             Log.w(TAG, "No Bluetooth audio — skipping VoIP announcement")
+            CallDebugTracker.onAnnouncementBlocked("NO_BLUETOOTH_AUDIO")
             return
         }
 
         val scoOk = audioRouter.connectBluetoothAudio()
         if (!scoOk) {
             Log.w(TAG, "SCO connection failed — skipping VoIP announcement")
+            CallDebugTracker.onAnnouncementBlocked("SCO_CONNECTION_FAILED")
             return
         }
 
@@ -111,6 +114,7 @@ class VoipAnnouncementService : Service() {
                 announcer.announce(text)
             } else {
                 Log.d(TAG, "Announcement volume is 0% — skipping VoIP TTS")
+                CallDebugTracker.onAnnouncementBlocked("VOLUME_ZERO")
             }
         } finally {
             // Restore audio mode + abandon focus (volume is left as-is)

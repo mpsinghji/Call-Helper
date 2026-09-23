@@ -35,6 +35,9 @@ data class TruecallerParsedInfo(
         val lower = lbl.lowercase()
         return lower.contains("someone you may know") ||
                 lower.contains("identified by truecaller") ||
+                lower.contains("first time caller") ||
+                lower.contains("likely a business") ||
+                lower.contains("community suggestion") ||
                 lower.contains("view profile") ||
                 lower.contains("& more") ||
                 lower.contains("search numbers")
@@ -147,12 +150,12 @@ object TruecallerParser {
         if (!nameNodes.isNullOrEmpty()) {
             for (node in nameNodes) {
                 val rawText = node.text?.toString()?.trim() ?: continue
-                if (rawText.isBlank() || isIgnored(rawText)) continue
+                if (rawText.isBlank() || isIgnored(rawText) || isCarrierOrLocationOrLabel(rawText)) continue
 
                 val (nameCandidate, spamFlag) = extractCleanNameAndSpam(rawText)
                 if (spamFlag) isSpam = true
 
-                if (nameCandidate != null && !isIgnored(nameCandidate)) {
+                if (nameCandidate != null && !isIgnored(nameCandidate) && !isCarrierOrLocationOrLabel(nameCandidate)) {
                     if (!isPurePhoneNumber(nameCandidate)) {
                         extractedName = nameCandidate
                         break
@@ -162,6 +165,30 @@ object TruecallerParser {
                 }
             }
             nameNodes.forEach { it.recycle() }
+        }
+
+        // Direct ID lookup for com.truecaller:id/title (Used by modern Truecaller overlays)
+        if (extractedName == null) {
+            val titleNodes = root.findAccessibilityNodeInfosByViewId(ID_TITLE)
+            if (!titleNodes.isNullOrEmpty()) {
+                for (node in titleNodes) {
+                    val rawText = node.text?.toString()?.trim() ?: continue
+                    if (rawText.isBlank() || isIgnored(rawText) || isCarrierOrLocationOrLabel(rawText)) continue
+
+                    val (nameCandidate, spamFlag) = extractCleanNameAndSpam(rawText)
+                    if (spamFlag) isSpam = true
+
+                    if (nameCandidate != null && !isIgnored(nameCandidate) && !isCarrierOrLocationOrLabel(nameCandidate)) {
+                        if (!isPurePhoneNumber(nameCandidate)) {
+                            extractedName = nameCandidate
+                            break
+                        } else if (extractedNumber == null) {
+                            extractedNumber = nameCandidate
+                        }
+                    }
+                }
+                titleNodes.forEach { it.recycle() }
+            }
         }
 
         val phoneNodes = root.findAccessibilityNodeInfosByViewId(ID_PHONE_NUMBER)
@@ -174,6 +201,10 @@ object TruecallerParser {
                 }
             }
             phoneNodes.forEach { it.recycle() }
+        }
+
+        if (extractedNumber == null) {
+            extractedNumber = extractPhoneNumberFromCarrierNodes(root)
         }
 
         val labelNodes = root.findAccessibilityNodeInfosByViewId(ID_LABEL)
@@ -291,7 +322,7 @@ object TruecallerParser {
         val className = node.className?.toString().orEmpty()
         val isButton = isClickable || className.contains("Button", ignoreCase = true)
 
-        if (!text.isNullOrBlank() && !isIgnored(text) && !isButton) {
+        if (!text.isNullOrBlank() && !isIgnored(text) && !isButton && !isCarrierOrLocationOrLabel(text)) {
             val lower = text.lowercase()
             val (cleanName, spamFlag) = extractCleanNameAndSpam(text)
 
@@ -330,6 +361,53 @@ object TruecallerParser {
             return TruecallerParsedInfo(foundName, foundNumber, foundLabel, isSpam)
         }
         return null
+    }
+
+    private val KNOWN_NON_NAME_LABELS = setOf(
+        "first time caller",
+        "likely a business",
+        "community suggestion",
+        "identified by truecaller",
+        "someone you may know",
+        "view profile",
+        "search numbers",
+        "driver",
+        "new",
+        "delivery",
+        "personal",
+        "business"
+    )
+
+    private val CARRIER_KEYWORDS = listOf(
+        "airtel", "jio", "vodafone", "idea", "vi", "bsnl", "mtnl", "verizon", "at&t", "t-mobile"
+    )
+
+    private fun isCarrierOrLocationOrLabel(text: String): Boolean {
+        val lower = text.lowercase().trim()
+        if (KNOWN_NON_NAME_LABELS.contains(lower)) return true
+        if (CARRIER_KEYWORDS.any { lower == it || lower.startsWith("$it ") || lower.contains(" $it ") }) return true
+        if (lower.contains("india") || lower.contains("state")) return true
+        if (lower.contains("·")) return true
+        return false
+    }
+
+    private fun extractPhoneNumberFromCarrierNodes(root: AccessibilityNodeInfo): String? {
+        fun search(node: AccessibilityNodeInfo, depth: Int): String? {
+            if (depth > 15) return null
+            val text = node.text?.toString()?.trim()
+            if (!text.isNullOrBlank() && text.contains("·")) {
+                val candidate = text.substringAfter("·").trim()
+                if (isPurePhoneNumber(candidate)) return candidate
+            }
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                val res = search(child, depth + 1)
+                child.recycle()
+                if (res != null) return res
+            }
+            return null
+        }
+        return search(root, 0)
     }
 
     private fun extractCleanNameAndSpam(text: String): Pair<String?, Boolean> {

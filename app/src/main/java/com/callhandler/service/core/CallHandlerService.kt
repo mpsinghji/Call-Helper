@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import android.content.Context
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
+import com.callhandler.service.debug.CallDebugTracker
 import com.callhandler.service.debug.DebugLogStore
 
 /**
@@ -135,6 +136,7 @@ class CallHandlerService : Service() {
     // ---------------------------------------------------------------- ringing
 
     private fun onRinging(number: String?, source: String) {
+        CallDebugTracker.onCallDetected(number, source)
         if (stateMachine.isRinging) {
             // Duplicate RINGING event — forward the number if available.
             if (number != null) {
@@ -231,6 +233,11 @@ class CallHandlerService : Service() {
         val name = identity.displayName ?: getString(R.string.unknown_caller)
         val text = getString(R.string.announce_incoming_call, name)
         Log.i(TAG, "Announcing via Bluetooth: '$name'")
+        CallDebugTracker.onAnnouncementPrepared(
+            name = name,
+            text = text,
+            source = identity.source.name
+        )
 
         debugTextView?.text = "🔊 Announcing..."
         try {
@@ -299,6 +306,7 @@ class CallHandlerService : Service() {
 
     private fun onCallAnswered() {
         if (!stateMachine.transitionTo(CallState.ANSWERED)) return
+        CallDebugTracker.onCallEnded()
 
         // Hold VOICE_CALL volume through Android's SCO re-initialization.
         // Android recreates the BT HFP link for the real call at a variable,
@@ -328,6 +336,7 @@ class CallHandlerService : Service() {
     private fun onCallEnded() {
         if (stateMachine.current == CallState.IDLE) return
         stateMachine.transitionTo(CallState.ENDED)
+        CallDebugTracker.onCallEnded()
         audioRouter.stopCallVolumeHold()
         stopSession()
         stopSelfSafely()

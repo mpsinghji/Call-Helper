@@ -7,6 +7,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.callhandler.service.audio.VoipAnnouncementService
 import com.callhandler.service.core.CallHandlerService
+import com.callhandler.service.debug.CallDebugTracker
 import com.callhandler.service.settings.SettingsManager
 
 /**
@@ -51,8 +52,6 @@ class CallNotificationListener : NotificationListenerService() {
     // ------------------------------------------------------------ VoIP calls
 
     private fun handleVoipNotification(sbn: StatusBarNotification) {
-        if (!settings.voipAnnouncementEnabled) return
-
         val extras = sbn.notification.extras
         val notifTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val notifText = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
@@ -68,6 +67,12 @@ class CallNotificationListener : NotificationListenerService() {
         val callInfo = VoipCallDetector.detect(sbn)
         if (callInfo == null) {
             Log.d(TAG, "VoIP announcement blocked or not a call: ${sbn.packageName} (${getNotifSummary(sbn)})")
+            return
+        }
+
+        if (!settings.voipAnnouncementEnabled) {
+            Log.d(TAG, "VoIP announcement disabled in settings: ${sbn.packageName}")
+            CallDebugTracker.onAnnouncementBlocked("DISABLED_IN_SETTINGS")
             return
         }
 

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.callhandler.service.debug.CallDebugTracker
 import com.callhandler.service.settings.SettingsManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -90,6 +91,7 @@ class AnnouncementManager(
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
                     Log.d(TAG, "TTS started: $utteranceId")
+                    CallDebugTracker.onTtsStarted(text)
                 }
 
                 override fun onDone(utteranceId: String?) {

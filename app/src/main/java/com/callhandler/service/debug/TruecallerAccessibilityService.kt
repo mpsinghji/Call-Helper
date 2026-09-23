@@ -52,15 +52,19 @@ class TruecallerAccessibilityService : AccessibilityService() {
         if (event == null || !observing) return
         if (event.packageName?.toString() != TRUECALLER_PACKAGE) return
 
-        val eventTypeName = AccessibilityEvent.eventTypeToString(event.eventType)
-        log("EVENT", "type=$eventTypeName pkg=${event.packageName} class=${event.className}")
+        if (verboseLogging) {
+            val eventTypeName = AccessibilityEvent.eventTypeToString(event.eventType)
+            log("EVENT", "type=$eventTypeName pkg=${event.packageName} class=${event.className}")
+        }
 
         // 1. Traverse and log the source node
         val source = event.source
         var parsed: TruecallerParsedInfo? = null
         if (source != null) {
-            log("EVENT", "--- Source node tree ---")
-            traverseNode(source, depth = 0)
+            if (verboseLogging) {
+                log("EVENT", "--- Source node tree ---")
+                traverseNode(source, depth = 0)
+            }
 
             // Parse for caller identity
             parsed = TruecallerParser.parse(source)
@@ -74,6 +78,10 @@ class TruecallerAccessibilityService : AccessibilityService() {
         if (parsed == null) {
             val root = try { rootInActiveWindow } catch (_: Exception) { null }
             if (root != null) {
+                if (verboseLogging) {
+                    log("EVENT", "--- Root in active window tree ---")
+                    traverseNode(root, depth = 0)
+                }
                 parsed = TruecallerParser.parse(root)
                 if (parsed != null) {
                     handleParsedCallerInfo(parsed)
@@ -99,6 +107,9 @@ class TruecallerAccessibilityService : AccessibilityService() {
         _lastParsedCallerInfo.value = info
         log("CALLER_ID", "TRUECALLER OVERLAY MATCH -> $announcement")
         Log.i(TAG, "Parsed Truecaller info: $announcement")
+
+        // Notify active CallDebugTracker timeline
+        CallDebugTracker.onTruecallerResult(info.phoneNumber, announcement)
 
         // Notify active listener or service
         onCallerInfoDetected?.invoke(info)
@@ -288,6 +299,9 @@ class TruecallerAccessibilityService : AccessibilityService() {
         const val TRUECALLER_PACKAGE = "com.truecaller"
         private const val MAX_DEPTH = 30
         private const val DEBOUNCE_WINDOW_MS = 4000L
+
+        @Volatile
+        var verboseLogging: Boolean = false
 
         @Volatile
         private var lastParsedAnnouncement: String? = null

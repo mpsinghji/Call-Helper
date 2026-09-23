@@ -170,6 +170,22 @@
                 android:textSize="11sp" />
 
         </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp">
+
+            <Button
+                android:id="@+id/btnToggleVerboseA11y"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Verbose Tree: OFF (Clean Debug)"
+                android:textSize="11sp" />
+
+        </LinearLayout>
     </LinearLayout>
 
     <!-- Speech test controls panel -->
@@ -274,21 +290,164 @@
         android:padding="8dp"
         android:visibility="gone">
 
-        <TextView
+        <!-- Active Call Card -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Caller-ID debug shows live data during incoming calls."
-            android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?android:attr/textColorSecondary" />
+            android:layout_marginBottom="8dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="10dp">
+
+                <TextView
+                    android:id="@+id/cardResultStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="STATUS         : IDLE"
+                    android:fontFamily="monospace"
+                    android:textStyle="bold"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/cardCallSource"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="Call Source    : -" />
+
+                <TextView
+                    android:id="@+id/cardDirection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="Direction      : -" />
+
+                <TextView
+                    android:id="@+id/cardPhoneNumber"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="Number         : None" />
+
+                <TextView
+                    android:id="@+id/cardContactName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="Phone/Contacts : -" />
+
+                <TextView
+                    android:id="@+id/cardTruecallerName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="Truecaller     : -" />
+
+                <TextView
+                    android:id="@+id/cardAnnouncementName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="Announcement   : -" />
+
+                <TextView
+                    android:id="@+id/cardSource"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="Source         : -" />
+
+                <TextView
+                    android:id="@+id/cardTtsText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:text="TTS Text       : -" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Simulation Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnSimulateMatch"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="🧪 Test Match"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btnSimulateMismatch"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="⚠ Test Mismatch"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btnClearCallerIdLogs"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.8"
+                android:text="🗑 Clear"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp">
+
+            <Button
+                android:id="@+id/btnSimulateWaIncoming"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="🧪 WhatsApp In"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btnSimulateWaOutgoing"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🚫 WhatsApp Out"
+                android:textSize="11sp" />
+
+        </LinearLayout>
 
         <TextView
             android:id="@+id/callerIdDebugText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:fontFamily="monospace"
-            android:textSize="11sp"
-            android:text="Waiting for incoming call..." />
+            android:visibility="gone" />
 
     </LinearLayout>
 

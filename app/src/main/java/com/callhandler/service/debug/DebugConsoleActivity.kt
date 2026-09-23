@@ -18,6 +18,7 @@ import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -47,6 +48,20 @@ class DebugConsoleActivity : AppCompatActivity() {
     private lateinit var panelAccessibility: View
     private lateinit var panelSpeech: View
     private lateinit var panelCallerId: View
+
+    // Verbose A11y toggle
+    private lateinit var btnToggleVerboseA11y: Button
+
+    // Caller-ID Card views
+    private lateinit var cardResultStatus: TextView
+    private lateinit var cardCallSource: TextView
+    private lateinit var cardDirection: TextView
+    private lateinit var cardPhoneNumber: TextView
+    private lateinit var cardContactName: TextView
+    private lateinit var cardTruecallerName: TextView
+    private lateinit var cardAnnouncementName: TextView
+    private lateinit var cardSource: TextView
+    private lateinit var cardTtsText: TextView
 
     // Log views
     private lateinit var logTextView: TextView
@@ -122,6 +137,41 @@ class DebugConsoleActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnClearLogs).setOnClickListener {
             DebugLogStore.clear()
+            CallDebugTracker.reset()
+        }
+
+        btnToggleVerboseA11y = findViewById(R.id.btnToggleVerboseA11y)
+        btnToggleVerboseA11y.setOnClickListener {
+            TruecallerAccessibilityService.verboseLogging = !TruecallerAccessibilityService.verboseLogging
+            updateVerboseA11yButton()
+        }
+
+        // Caller-ID card views
+        cardResultStatus = findViewById(R.id.cardResultStatus)
+        cardCallSource = findViewById(R.id.cardCallSource)
+        cardDirection = findViewById(R.id.cardDirection)
+        cardPhoneNumber = findViewById(R.id.cardPhoneNumber)
+        cardContactName = findViewById(R.id.cardContactName)
+        cardTruecallerName = findViewById(R.id.cardTruecallerName)
+        cardAnnouncementName = findViewById(R.id.cardAnnouncementName)
+        cardSource = findViewById(R.id.cardSource)
+        cardTtsText = findViewById(R.id.cardTtsText)
+
+        findViewById<Button>(R.id.btnSimulateMatch).setOnClickListener {
+            simulateCall(mismatch = false)
+        }
+        findViewById<Button>(R.id.btnSimulateMismatch).setOnClickListener {
+            simulateCall(mismatch = true)
+        }
+        findViewById<Button>(R.id.btnSimulateWaIncoming).setOnClickListener {
+            simulateWaCall(incoming = true)
+        }
+        findViewById<Button>(R.id.btnSimulateWaOutgoing).setOnClickListener {
+            simulateWaCall(incoming = false)
+        }
+        findViewById<Button>(R.id.btnClearCallerIdLogs).setOnClickListener {
+            DebugLogStore.clear()
+            CallDebugTracker.reset()
         }
 
         // Speech test controls
@@ -146,12 +196,21 @@ class DebugConsoleActivity : AppCompatActivity() {
             }
         }
 
+        // Observe CallDebugTracker
+        lifecycleScope.launch {
+            CallDebugTracker.currentSnapshot.collect { snapshot ->
+                updateCallerIdCard(snapshot)
+            }
+        }
+
         updateStatus()
+        updateVerboseA11yButton()
     }
 
     override fun onResume() {
         super.onResume()
         updateStatus()
+        updateVerboseA11yButton()
     }
 
     override fun onDestroy() {
@@ -181,6 +240,124 @@ class DebugConsoleActivity : AppCompatActivity() {
         // Observation status
         val observing = TruecallerAccessibilityService.instance?.observing == true
         statusObservation.text = "Observation: ${if (observing) "🟢 RUNNING" else "⏹ STOPPED"}"
+    }
+
+    private fun updateVerboseA11yButton() {
+        val isVerbose = TruecallerAccessibilityService.verboseLogging
+        btnToggleVerboseA11y.text = if (isVerbose) {
+            "Verbose Tree: ON (Full Dumps)"
+        } else {
+            "Verbose Tree: OFF (Clean Debug)"
+        }
+    }
+
+    private fun updateCallerIdCard(snapshot: CallDebugTracker.CallDebugSnapshot?) {
+        if (snapshot == null) {
+            cardResultStatus.text = "STATUS         : IDLE"
+            cardResultStatus.setTextColor(Color.GRAY)
+            cardCallSource.text = "Call Source    : -"
+            cardDirection.text = "Direction      : -"
+            cardPhoneNumber.text = "Number         : None"
+            cardContactName.text = "Phone/Contacts : -"
+            cardTruecallerName.text = "Truecaller     : -"
+            cardAnnouncementName.text = "Announcement   : -"
+            cardSource.text = "Source         : -"
+            cardTtsText.text = "TTS Text       : -"
+            return
+        }
+
+        when {
+            snapshot.isMismatch -> {
+                cardResultStatus.text = "RESULT         : ⚠ IDENTITY MISMATCH"
+                cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
+            }
+            snapshot.announcementName != null && snapshot.announcementName != "BLOCKED" -> {
+                cardResultStatus.text = "RESULT         : ✓ IDENTITY MATCH"
+                cardResultStatus.setTextColor(Color.parseColor("#4CAF50"))
+            }
+            snapshot.announcementName == "BLOCKED" -> {
+                cardResultStatus.text = "RESULT         : 🚫 BLOCKED (${snapshot.reason ?: "POLICY"})"
+                cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
+            }
+            snapshot.isRinging -> {
+                cardResultStatus.text = "STATUS         : 📞 CALL IN PROGRESS"
+                cardResultStatus.setTextColor(Color.parseColor("#FFC107"))
+            }
+            else -> {
+                cardResultStatus.text = "STATUS         : IDLE"
+                cardResultStatus.setTextColor(Color.GRAY)
+            }
+        }
+
+        cardCallSource.text = "Call Source    : ${snapshot.callSource.displayName}"
+        cardDirection.text = "Direction      : ${snapshot.callDirection ?: "-"}"
+        cardPhoneNumber.text = "Number         : ${snapshot.phoneNumber ?: "Unknown"}"
+        cardContactName.text = "Phone/Contacts : ${snapshot.contactName ?: "Unknown"}"
+        cardTruecallerName.text = "Truecaller     : ${snapshot.truecallerName ?: "Waiting..."}"
+        cardAnnouncementName.text = "Announcement   : ${snapshot.announcementName ?: "Waiting..."}"
+        cardSource.text = "Source         : ${snapshot.announcementSource ?: "-"}"
+        cardTtsText.text = "TTS Text       : ${snapshot.ttsText ?: "-"}"
+    }
+
+    private fun simulateCall(mismatch: Boolean) {
+        val testNumber = "09805305407"
+        val tcName = "Pavinder Jasrotia"
+
+        CallDebugTracker.reset()
+        CallDebugTracker.onCallDetected(testNumber, "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult(testNumber, null)
+        CallDebugTracker.onTruecallerResult(testNumber, tcName)
+
+        if (mismatch) {
+            // Replicates the reported mismatch bug: Truecaller is Pavinder Jasrotia, but announcement is Aman
+            CallDebugTracker.onIdentitySelected(testNumber, "Aman", "TRUECALLER")
+            CallDebugTracker.onAnnouncementPrepared("Aman", "Call from Aman", "TRUECALLER")
+            CallDebugTracker.onTtsStarted("Call from Aman")
+        } else {
+            CallDebugTracker.onIdentitySelected(testNumber, tcName, "TRUECALLER")
+            CallDebugTracker.onAnnouncementPrepared(tcName, "Incoming call from $tcName", "TRUECALLER")
+            CallDebugTracker.onTtsStarted("Incoming call from $tcName")
+        }
+        CallDebugTracker.onCallEnded()
+    }
+
+    private fun simulateWaCall(incoming: Boolean) {
+        CallDebugTracker.reset()
+        if (incoming) {
+            val tcName = "Pavinder Jasrotia"
+            val waNumber = "+919805305407"
+            CallDebugTracker.onTruecallerResult(waNumber, tcName)
+            CallDebugTracker.onVoipCallEvent(
+                source = DebugCallSource.WHATSAPP,
+                direction = "INCOMING",
+                callerName = tcName,
+                number = waNumber,
+                allowed = true,
+                reason = null,
+                ttsText = "Incoming call from $tcName",
+                packageName = "com.whatsapp",
+                notifTitle = tcName,
+                notifText = "Incoming voice call",
+                detectorDecision = "INCOMING_CALL"
+            )
+            CallDebugTracker.onTtsStarted("Incoming call from $tcName")
+            CallDebugTracker.onCallEnded()
+        } else {
+            val contactName = "Tushar"
+            CallDebugTracker.onVoipCallEvent(
+                source = DebugCallSource.WHATSAPP,
+                direction = "OUTGOING",
+                callerName = contactName,
+                number = null,
+                allowed = false,
+                reason = "OUTGOING CALL",
+                ttsText = null,
+                packageName = "com.whatsapp",
+                notifTitle = contactName,
+                notifText = "Calling...",
+                detectorDecision = "OUTGOING_CALL"
+            )
+        }
     }
 
     private fun isTruecallerInstalled(): Boolean {

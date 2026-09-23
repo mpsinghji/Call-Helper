@@ -3,6 +3,8 @@ package com.callhandler.service.identity
 import android.app.Notification
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.callhandler.service.debug.CallDebugTracker
+import com.callhandler.service.debug.DebugCallSource
 import com.callhandler.service.debug.DebugLogStore
 import java.util.concurrent.ConcurrentHashMap
 
@@ -421,6 +423,7 @@ object VoipCallDetector {
                 allowed = false,
                 reason = "NOTIFICATION_REMOVED"
             )
+            CallDebugTracker.onCallEnded()
         }
     }
 
@@ -463,8 +466,61 @@ object VoipCallDetector {
 
         for (line in lines) {
             Log.i(TAG, "[VOIP] $line")
-            DebugLogStore.log("VOIP", line)
         }
+
+        // Suppress ordinary chat messages and background noise from the call-debug timeline
+        if (reason == "REJECTED_NOISE" || reason == "REJECTED_MESSAGING_STYLE") {
+            return
+        }
+
+        val callSource = DebugCallSource.fromPackage(sbn.packageName)
+        val extractedNumber = extractPhoneNumber(title, text)
+        val dirString = when (direction) {
+            VoipCallDirection.INCOMING -> "INCOMING"
+            VoipCallDirection.OUTGOING -> "OUTGOING"
+            VoipCallDirection.UNKNOWN -> "UNKNOWN"
+        }
+        val formattedReason = when (reason) {
+            "OUTGOING_CALL" -> "OUTGOING CALL"
+            "NOTIFICATION_REMOVED" -> "NOTIFICATION REMOVED"
+            "NO_POSITIVE_INCOMING_EVIDENCE" -> "NO_POSITIVE_INCOMING_EVIDENCE"
+            else -> reason
+        }
+
+        val isVideo = config.videoHints.any { "$title $text".lowercase().contains(it) }
+        val callType = if (isVideo) "video call" else "voice call"
+        val ttsText = if (allowed && identity != null) {
+            "${config.displayName} $callType from $identity"
+        } else {
+            null
+        }
+
+        CallDebugTracker.onVoipCallEvent(
+            source = callSource,
+            direction = dirString,
+            callerName = identity,
+            number = extractedNumber,
+            allowed = allowed,
+            reason = formattedReason,
+            ttsText = ttsText,
+            packageName = sbn.packageName,
+            notifTitle = title,
+            notifText = text,
+            detectorDecision = reason
+        )
+    }
+
+    private fun extractPhoneNumber(title: String, text: String): String? {
+        val phoneRegex = Regex("(?:\\+?\\d{1,4}[\\s-]*)?(?:\\(?\\d{2,5}\\)?[\\s-]*)?\\d{3,5}[\\s-]*\\d{4,6}")
+        val matchTitle = phoneRegex.find(title)?.value?.trim()
+        if (matchTitle != null && matchTitle.replace(Regex("[^0-9]"), "").length >= 7) {
+            return matchTitle
+        }
+        val matchText = phoneRegex.find(text)?.value?.trim()
+        if (matchText != null && matchText.replace(Regex("[^0-9]"), "").length >= 7) {
+            return matchText
+        }
+        return null
     }
 
     /**

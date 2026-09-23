@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.callhandler.service.core.CallerIdentity
 import com.callhandler.service.core.IdentitySource
+import com.callhandler.service.debug.CallDebugTracker
 import com.callhandler.service.debug.DebugLogStore
 import com.callhandler.service.debug.TruecallerAccessibilityService
 import kotlinx.coroutines.CompletableDeferred
@@ -59,13 +60,16 @@ class CallerIdentityManager(private val context: Context) {
         currentNumber = number
         Log.d(TAG, "Incoming number source=$source, starting lookup")
         DebugLogStore.log("CALLER_ID", "CALL = RINGING (number=$number, source=$source)")
+        CallDebugTracker.onCallDetected(number, source)
 
         val name = runCatching { lookupContactBlocking(number) }.getOrNull()
+        CallDebugTracker.onContactLookupResult(number, name)
         if (name != null) {
             Log.d(TAG, "Contacts lookup: MATCH -> $name")
             DebugLogStore.log("CALLER_ID", "CONTACT RESULT = $name")
             DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = CONTACT")
             DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $name")
+            CallDebugTracker.onIdentitySelected(number, name, "CONTACT")
             publish(CallerIdentity(number, name, IdentitySource.CONTACT))
         } else {
             Log.d(TAG, "Contacts lookup: NO_MATCH (waiting for Truecaller)")
@@ -88,6 +92,7 @@ class CallerIdentityManager(private val context: Context) {
         lastTruecallerName = trimmed
         Log.d(TAG, "Resolved from Truecaller: $trimmed")
         DebugLogStore.log("CALLER_ID", "TRUECALLER NAME = $trimmed")
+        CallDebugTracker.onTruecallerResult(currentNumber, trimmed)
 
         // Rule: If contacts matched first, never replace with Truecaller
         if (_identity.value?.source == IdentitySource.CONTACT) {
@@ -97,6 +102,7 @@ class CallerIdentityManager(private val context: Context) {
 
         DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = TRUECALLER")
         DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $trimmed")
+        CallDebugTracker.onIdentitySelected(currentNumber, trimmed, "TRUECALLER")
         publish(CallerIdentity(currentNumber, trimmed, IdentitySource.TRUECALLER))
     }
 
@@ -113,6 +119,7 @@ class CallerIdentityManager(private val context: Context) {
             currentNumber = number
             Log.d(TAG, "Incoming number source=$source, starting lookup")
             DebugLogStore.log("CALLER_ID", "CALL = RINGING (number=$number, source=$source)")
+            CallDebugTracker.onCallDetected(number, source)
         }
 
         val deferred = CompletableDeferred<CallerIdentity>()
@@ -121,11 +128,13 @@ class CallerIdentityManager(private val context: Context) {
         // 1. Check saved contacts FIRST (instant, authoritative)
         currentNumber?.let { number2 ->
             val contactName = lookupContact(number2)
+            CallDebugTracker.onContactLookupResult(number2, contactName)
             if (contactName != null) {
                 Log.d(TAG, "Contacts lookup: MATCH -> $contactName")
                 DebugLogStore.log("CALLER_ID", "CONTACT RESULT = $contactName")
                 DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = CONTACT")
                 DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $contactName")
+                CallDebugTracker.onIdentitySelected(number2, contactName, "CONTACT")
                 val id = CallerIdentity(number2, contactName, IdentitySource.CONTACT)
                 _identity.value = id
                 pendingResolve = null
@@ -154,11 +163,13 @@ class CallerIdentityManager(private val context: Context) {
             // Retry contacts lookup if number arrived during the wait
             currentNumber?.let { lateNum ->
                 val contactName = lookupContact(lateNum)
+                CallDebugTracker.onContactLookupResult(lateNum, contactName)
                 if (contactName != null) {
                     Log.d(TAG, "Contacts lookup (late number): MATCH -> $contactName")
                     DebugLogStore.log("CALLER_ID", "CONTACT RESULT = $contactName (late number)")
                     DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = CONTACT")
                     DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $contactName")
+                    CallDebugTracker.onIdentitySelected(lateNum, contactName, "CONTACT")
                     val id = CallerIdentity(lateNum, contactName, IdentitySource.CONTACT)
                     _identity.value = id
                     pendingResolve = null
@@ -179,12 +190,15 @@ class CallerIdentityManager(private val context: Context) {
                 Log.d(TAG, "Call log fallback: got number $callLogNumber")
                 DebugLogStore.log("CALLER_ID", "CALL_LOG_FALLBACK = $callLogNumber")
                 DebugLogStore.log("CALLER_ID", "CALL = RINGING (number=$callLogNumber, source=CALL_LOG)")
+                CallDebugTracker.onCallDetected(callLogNumber, "CALL_LOG")
                 val contactName = lookupContact(callLogNumber)
+                CallDebugTracker.onContactLookupResult(callLogNumber, contactName)
                 if (contactName != null) {
                     Log.d(TAG, "Contacts lookup (call log number): MATCH -> $contactName")
                     DebugLogStore.log("CALLER_ID", "CONTACT RESULT = $contactName (call log)")
                     DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = CONTACT")
                     DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $contactName")
+                    CallDebugTracker.onIdentitySelected(callLogNumber, contactName, "CONTACT")
                     val id = CallerIdentity(callLogNumber, contactName, IdentitySource.CONTACT)
                     _identity.value = id
                     pendingResolve = null
@@ -198,6 +212,7 @@ class CallerIdentityManager(private val context: Context) {
                 DebugLogStore.log("CALLER_ID", "CALL_LOG_FALLBACK = NO NUMBER")
                 DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = UNKNOWN (no number from any source)")
                 DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = Unknown caller")
+                CallDebugTracker.onIdentitySelected(null, "Unknown caller", "UNKNOWN")
                 val id = CallerIdentity.unknown(null)
                 _identity.value = id
                 pendingResolve = null
@@ -213,6 +228,8 @@ class CallerIdentityManager(private val context: Context) {
             DebugLogStore.log("CALLER_ID", "TRUECALLER OVERLAY INSTANT MATCH = $tcName")
             DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = TRUECALLER")
             DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $tcName")
+            CallDebugTracker.onTruecallerResult(currentNumber, tcName)
+            CallDebugTracker.onIdentitySelected(currentNumber, tcName, "TRUECALLER")
             val id = CallerIdentity(currentNumber, tcName, IdentitySource.TRUECALLER)
             _identity.value = id
             pendingResolve = null
@@ -262,6 +279,7 @@ class CallerIdentityManager(private val context: Context) {
                     DebugLogStore.log("CALLER_ID", "TRUECALLER = TIMEOUT / UNAVAILABLE")
                     DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = UNKNOWN")
                     DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = Unknown caller")
+                    CallDebugTracker.onIdentitySelected(currentNumber, "Unknown caller", "UNKNOWN")
                     CallerIdentity.unknown(currentNumber)
                 }
 

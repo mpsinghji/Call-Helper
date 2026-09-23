@@ -35,6 +35,8 @@ Thumbs.db
 
 # Logs
 *.log
+*_log.txt
+*log.txt
 
 # Signing files
 *.jks
