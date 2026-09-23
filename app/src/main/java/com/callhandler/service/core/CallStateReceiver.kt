@@ -54,6 +54,7 @@ class CallStateReceiver : BroadcastReceiver() {
             }
 
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                com.callhandler.service.debug.CallDebugTracker.recordActiveCallState()
                 val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
                     action = CallHandlerService.ACTION_ANSWERED
                 }
@@ -61,6 +62,7 @@ class CallStateReceiver : BroadcastReceiver() {
             }
 
             TelephonyManager.EXTRA_STATE_IDLE -> {
+                com.callhandler.service.debug.CallDebugTracker.onCallEnded()
                 val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
                     action = CallHandlerService.ACTION_ENDED
                 }

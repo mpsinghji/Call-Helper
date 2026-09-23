@@ -51,6 +51,24 @@ class CallerIdentityManager(private val context: Context) {
     private var callLogObserver: ContentObserver? = null
 
     /**
+     * Resets identity state completely for a new incoming call.
+     * Ensures no caller names, numbers, or identities bleed over from prior calls.
+     */
+    fun resetForNewCall(number: String? = null) {
+        Log.d(TAG, "Resetting CallerIdentityManager for new call (number=$number)")
+        stopCallLogObserver()
+        currentNumber = number
+        lastTruecallerName = null
+        pendingResolve?.cancel()
+        pendingResolve = null
+        _identity.value = if (number != null) CallerIdentity.unknown(number) else null
+        TruecallerAccessibilityService.onCallerInfoDetected = null
+        TruecallerAccessibilityService.resetDeduplication()
+    }
+
+    fun reset() = resetForNewCall(null)
+
+    /**
      * Registers an incoming number delivered by either number source.
      * The first valid contact match (or Truecaller name) completes the
      * pending resolution; subsequent duplicates are ignored.
@@ -118,9 +136,8 @@ class CallerIdentityManager(private val context: Context) {
      * @param source  "PHONE_STATE" for diagnostics.
      */
     suspend fun resolveIdentity(number: String?, source: String, waitMs: Long): CallerIdentity = coroutineScope {
-        // Register the first event's number before creating the pending result.
-        if (number != null && number != currentNumber) {
-            currentNumber = number
+        resetForNewCall(number)
+        if (number != null) {
             Log.d(TAG, "Incoming number source=$source, starting lookup")
             DebugLogStore.log("CALLER_ID", "CALL = RINGING (number=$number, source=$source)")
             CallDebugTracker.onCallDetected(number, source)
@@ -300,17 +317,6 @@ class CallerIdentityManager(private val context: Context) {
     private fun publish(id: CallerIdentity) {
         _identity.value = id
         pendingResolve?.let { if (!it.isCompleted) it.complete(id) }
-    }
-
-    fun reset() {
-        stopCallLogObserver()
-        currentNumber = null
-        lastTruecallerName = null
-        pendingResolve?.cancel()
-        pendingResolve = null
-        _identity.value = null
-        TruecallerAccessibilityService.onCallerInfoDetected = null
-        TruecallerAccessibilityService.resetDeduplication()
     }
 
     // -------------------------------------------------- call log ContentObserver

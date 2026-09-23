@@ -1,5 +1,7 @@
 package com.callhandler.service.core
 
+import com.callhandler.service.debug.DebugCallSource
+
 /** Lifecycle states for one incoming-call session in the telephone state machine. */
 enum class CallState {
     IDLE,
@@ -50,3 +52,28 @@ data class CallerIdentity(
             CallerIdentity(number, null, IdentitySource.UNKNOWN, spamStatus)
     }
 }
+
+/**
+ * Immutable historical record of a completed or in-progress call session.
+ * Once created and added to history, subsequent changes to active sessions
+ * must never mutate this entry.
+ */
+data class CallHistoryEntry(
+    val sessionId: Long,
+    val startTimeMs: Long,
+    val endTimeMs: Long = 0L,
+    val formattedTime: String,
+    val callSource: DebugCallSource = DebugCallSource.GSM,
+    val direction: String,
+    val number: String?,
+    val contactName: String?,
+    val truecallerName: String?,
+    val announcedName: String?,
+    val announcementSource: String?,
+    val ttsText: String?,
+    val status: String,
+    val spamStatus: SpamStatus = SpamStatus.UNKNOWN,
+    val blockReason: String? = null,
+    val bugs: List<String> = emptyList(),
+    val events: List<String> = emptyList()
+)

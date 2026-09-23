@@ -24,6 +24,7 @@ data class CallBug(
     val type: BugType,
     val title: String,
     val details: String,
+    val sessionId: Long? = null,
     val timestamp: Long = System.currentTimeMillis()
 ) {
     fun format(): String {
@@ -123,7 +124,8 @@ object CallBugDetector {
      */
     fun checkNumberMismatch(
         activeCallNumber: String?,
-        observedNumber: String?
+        observedNumber: String?,
+        sessionId: Long? = null
     ): CallBug? {
         if (activeCallNumber.isNullOrBlank() || observedNumber.isNullOrBlank()) return null
 
@@ -135,10 +137,13 @@ object CallBugDetector {
                     normActive.endsWith(normObserved) ||
                     normObserved.endsWith(normActive)
             if (!matches) {
+                val sessionPart = if (sessionId != null) "Session #$sessionId\n\n" else ""
+                val details = "${sessionPart}Active call:\n$activeCallNumber\n\nObserved:\n$observedNumber\n\nAction:\nIgnored"
                 return CallBug(
                     type = BugType.TRUECALLER_NUMBER_MISMATCH,
                     title = "TRUECALLER NUMBER MISMATCH",
-                    details = "Active call: $activeCallNumber\nObserved: $observedNumber\nAction: Ignored"
+                    details = details,
+                    sessionId = sessionId
                 )
             }
         }
@@ -230,7 +235,8 @@ object CallBugDetector {
         return null
     }
 
-    private fun normalizePhoneNumber(raw: String): String {
+    fun normalizePhoneNumber(raw: String?): String {
+        if (raw == null) return ""
         val digitsOnly = raw.replace("[^0-9]".toRegex(), "")
         return if (digitsOnly.length > 10) digitsOnly.takeLast(10) else digitsOnly
     }

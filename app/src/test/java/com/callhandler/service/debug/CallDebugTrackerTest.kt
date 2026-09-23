@@ -454,4 +454,182 @@ class CallDebugTrackerTest {
         assertTrue(card.contains("Announced : Pavinder Jasrotia"))
         assertTrue(card.contains("Status    : ✓ ANNOUNCED"))
     }
+
+    // 19. Separate calls create independent sessions (Papa Ji -> 101, Mummy Ji -> 102, Aman -> 103)
+    @Test
+    fun testSeparateCallsCreateIndependentSessions() {
+        // Call 1: Papa Ji
+        CallDebugTracker.onCallDetected("+919419100001", "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult("+919419100001", "Papa Ji")
+        CallDebugTracker.onIdentitySelected("+919419100001", "Papa Ji", "CONTACT")
+        CallDebugTracker.onAnnouncementPrepared("Papa Ji", "Incoming call from Papa Ji", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from Papa Ji")
+        val session1Id = CallDebugTracker.activeSession.value?.id
+        CallDebugTracker.onCallEnded()
+
+        // Call 2: Mummy Ji
+        CallDebugTracker.onCallDetected("+919816939576", "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult("+919816939576", "Mummy Ji")
+        CallDebugTracker.onIdentitySelected("+919816939576", "Mummy Ji", "CONTACT")
+        CallDebugTracker.onAnnouncementPrepared("Mummy Ji", "Incoming call from Mummy Ji", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from Mummy Ji")
+        val session2Id = CallDebugTracker.activeSession.value?.id
+        CallDebugTracker.onCallEnded()
+
+        // Call 3: Aman
+        CallDebugTracker.onCallDetected("+917018308746", "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult("+917018308746", "Aman")
+        CallDebugTracker.onIdentitySelected("+917018308746", "Aman", "CONTACT")
+        CallDebugTracker.onAnnouncementPrepared("Aman", "Incoming call from Aman", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from Aman")
+        val session3Id = CallDebugTracker.activeSession.value?.id
+        CallDebugTracker.onCallEnded()
+
+        assertNotNull(session1Id)
+        assertNotNull(session2Id)
+        assertNotNull(session3Id)
+        assertNotEquals(session1Id, session2Id)
+        assertNotEquals(session2Id, session3Id)
+        assertNotEquals(session1Id, session3Id)
+
+        val history = CallDebugTracker.sessionHistory.value
+        assertEquals(3, history.size)
+        assertEquals("Papa Ji", history[0].contactName)
+        assertEquals("+919419100001", history[0].number)
+        assertEquals("Mummy Ji", history[1].contactName)
+        assertEquals("+919816939576", history[1].number)
+        assertEquals("Aman", history[2].contactName)
+        assertEquals("+917018308746", history[2].number)
+    }
+
+    // 20. Multiple GSM detectors (PHONE_STATE + PHONE_STATE_LISTENER) map to the SAME session
+    @Test
+    fun testMultipleGsmDetectors_sameSession() {
+        val number = "+919816939576"
+
+        // PHONE_STATE_LISTENER reports ringing
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE_LISTENER")
+        val sessionId1 = CallDebugTracker.activeSession.value?.id
+        assertNotNull(sessionId1)
+
+        // 80ms later: PHONE_STATE reports ringing for the same number
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+        val sessionId2 = CallDebugTracker.activeSession.value?.id
+
+        assertEquals("Both detector sources for the same ringing call must map to the SAME session",
+            sessionId1, sessionId2)
+        assertEquals("Only one session entry must exist in history",
+            1, CallDebugTracker.sessionHistory.value.size)
+    }
+
+    // 21. New call after previous call ended creates a new session
+    @Test
+    fun testNewCallAfterEnded_createsNewSession() {
+        // Call A starts & ends
+        CallDebugTracker.onCallDetected("+919816939576", "PHONE_STATE")
+        val sessionAId = CallDebugTracker.activeSession.value?.id
+        CallDebugTracker.onCallEnded()
+
+        assertNull("Active session must be cleared after call ended", CallDebugTracker.activeSession.value)
+
+        // Call B starts
+        CallDebugTracker.onCallDetected("+917018308746", "PHONE_STATE")
+        val sessionBId = CallDebugTracker.activeSession.value?.id
+
+        assertNotNull(sessionAId)
+        assertNotNull(sessionBId)
+        assertNotEquals("New call after ended must get a new session ID", sessionAId, sessionBId)
+    }
+
+    // 22. Completed history is strictly immutable; later calls never mutate older entries
+    @Test
+    fun testCompletedHistoryIsImmutable() {
+        // Call A: Mummy Ji
+        CallDebugTracker.onCallDetected("+919816939576", "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult("+919816939576", "Mummy Ji")
+        CallDebugTracker.onIdentitySelected("+919816939576", "Mummy Ji", "CONTACT")
+        CallDebugTracker.onAnnouncementPrepared("Mummy Ji", "Incoming call from Mummy Ji", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from Mummy Ji")
+        CallDebugTracker.onCallEnded()
+
+        val historyBefore = CallDebugTracker.sessionHistory.value[0]
+        assertEquals("Mummy Ji", historyBefore.contactName)
+        assertEquals("+919816939576", historyBefore.number)
+        assertEquals("Mummy Ji", historyBefore.announcedName)
+
+        // Call B: Aman
+        CallDebugTracker.onCallDetected("+917018308746", "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult("+917018308746", "Aman")
+        CallDebugTracker.onIdentitySelected("+917018308746", "Aman", "CONTACT")
+        CallDebugTracker.onAnnouncementPrepared("Aman", "Incoming call from Aman", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from Aman")
+
+        // History entry for Call A MUST remain completely intact and NOT mutated to Aman!
+        val historyAfterCallB = CallDebugTracker.sessionHistory.value[0]
+        assertEquals("History A contact must still be Mummy Ji", "Mummy Ji", historyAfterCallB.contactName)
+        assertEquals("History A number must still be +919816939576", "+919816939576", historyAfterCallB.number)
+        assertEquals("History A announced name must still be Mummy Ji", "Mummy Ji", historyAfterCallB.announcedName)
+    }
+
+    // 23. Active call number resets cleanly and is not inherited from previous session
+    @Test
+    fun testNumberResetBetweenCalls() {
+        // Call A: +919816939576
+        CallDebugTracker.onCallDetected("+919816939576", "PHONE_STATE")
+        CallDebugTracker.onCallEnded()
+
+        // Call B: +917018308746
+        CallDebugTracker.onCallDetected("+917018308746", "PHONE_STATE")
+        val activeNumber = CallDebugTracker.activeSession.value?.phoneNumber
+        assertEquals("+917018308746", activeNumber)
+        assertEquals("+917018308746", CallDebugTracker.phoneNumber)
+    }
+
+    // 24. Truecaller observations after call ended must not reopen, create, or modify sessions
+    @Test
+    fun testTruecallerAfterCallEnded_doesNotModifyHistory() {
+        CallDebugTracker.onCallDetected("+919816939576", "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult("+919816939576", "Mummy Ji")
+        CallDebugTracker.onCallEnded()
+
+        val historyBefore = CallDebugTracker.sessionHistory.value[0]
+        assertNull(historyBefore.truecallerName)
+
+        // Late Truecaller observation arrives after call ended
+        CallDebugTracker.onTruecallerResult("+919816939576", "Mummy Mobile")
+
+        // History must NOT be modified
+        val historyAfter = CallDebugTracker.sessionHistory.value[0]
+        assertNull("Truecaller observation after call ended must NOT modify history", historyAfter.truecallerName)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+        assertNull("Active session must remain null", CallDebugTracker.activeSession.value)
+    }
+
+    // 25. Duplicate announcement guard suppresses duplicate announcement requests when repeat disabled
+    @Test
+    fun testDuplicateTtsGuard_blocksDuplicateWhenRepeatDisabled() {
+        val number = "+917018308746"
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+
+        // First announcement check
+        val canAnnounce1 = CallDebugTracker.canStartAnnouncement(repeatEnabled = false)
+        assertTrue("First announcement request must be allowed", canAnnounce1)
+
+        // Parallel / duplicate announcement check from second detector
+        val canAnnounce2 = CallDebugTracker.canStartAnnouncement(repeatEnabled = false)
+        assertFalse("Duplicate announcement request must be suppressed when repeat is disabled", canAnnounce2)
+    }
+
+    // 26. Announcement guard allows repeated announcements when repeat enabled
+    @Test
+    fun testDuplicateTtsGuard_allowsRepeatWhenRepeatEnabled() {
+        val number = "+917018308746"
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+
+        val canAnnounce1 = CallDebugTracker.canStartAnnouncement(repeatEnabled = true)
+        assertTrue("First announcement request must be allowed", canAnnounce1)
+
+        val canAnnounce2 = CallDebugTracker.canStartAnnouncement(repeatEnabled = true)
+        assertTrue("Second announcement request must be allowed when repeat is enabled", canAnnounce2)
+    }
 }

@@ -234,6 +234,13 @@ class CallHandlerService : Service() {
     private suspend fun announceViaBluetooth(identity: CallerIdentity) {
         if (!stateMachine.isRinging) return
 
+        val repeatEnabled = settings.repeatAnnouncementEnabled
+        if (!CallDebugTracker.canStartAnnouncement(repeatEnabled)) {
+            Log.d(TAG, "Duplicate announcement request suppressed by CallDebugTracker guard (repeatEnabled=$repeatEnabled)")
+            DebugLogStore.log("DIAG", "Duplicate announcement request suppressed (repeatEnabled=$repeatEnabled)")
+            return
+        }
+
         val scoOk = audioRouter.connectBluetoothAudio()
         if (!scoOk) {
             Log.w(TAG, "SCO connection failed — skipping announcement (never plays on speaker)")
@@ -610,11 +617,23 @@ class CallHandlerService : Service() {
         }
         val listener = object : PhoneStateListener() {
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                if (state == TelephonyManager.CALL_STATE_RINGING && !phoneNumber.isNullOrBlank()) {
-                    Log.d(TAG, "PhoneStateListener: RINGING with number (length=${phoneNumber.length})")
-                    DebugLogStore.log("CALLER_ID", "PHONE_STATE_LISTENER = number received")
-                    scope.launch(Dispatchers.IO) {
-                        identityManager.onIncomingNumber(phoneNumber, "PHONE_STATE_LISTENER")
+                when (state) {
+                    TelephonyManager.CALL_STATE_RINGING -> {
+                        if (!phoneNumber.isNullOrBlank()) {
+                            Log.d(TAG, "PhoneStateListener: RINGING with number (length=${phoneNumber.length})")
+                            DebugLogStore.log("CALLER_ID", "PHONE_STATE_LISTENER = number received")
+                            scope.launch(Dispatchers.IO) {
+                                identityManager.onIncomingNumber(phoneNumber, "PHONE_STATE_LISTENER")
+                            }
+                        }
+                    }
+                    TelephonyManager.CALL_STATE_OFFHOOK -> {
+                        Log.d(TAG, "PhoneStateListener: OFFHOOK")
+                        CallDebugTracker.recordActiveCallState()
+                    }
+                    TelephonyManager.CALL_STATE_IDLE -> {
+                        Log.d(TAG, "PhoneStateListener: IDLE")
+                        CallDebugTracker.onCallEnded()
                     }
                 }
             }
