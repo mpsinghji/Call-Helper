@@ -4,17 +4,19 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?android:attr/colorBackground">
+    android:background="#0F172A">
 
-    <!-- 1. Console-Only Header Bar (Requirement 15: Developer Console, Copy Developer Details, Exit/Expand) -->
+    <!-- 1. Console-Only Header Bar (Requirement 18) -->
     <LinearLayout
         android:id="@+id/containerConsoleOnlyBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="8dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp"
         android:background="#1E293B"
+        android:elevation="4dp"
         android:visibility="gone">
 
         <TextView
@@ -22,614 +24,762 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/console_only_title"
-            android:textColor="#F8FAFC"
-            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
             android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnConsoleOnlyCopyDev"
-            style="?attr/materialButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:layout_marginEnd="6dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="@string/btn_copy_developer_details"
-            android:textSize="11sp" />
-
-        <Button
+        <ImageButton
             android:id="@+id/btnConsoleOnlyExit"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="@string/console_mode_exit"
-            android:textSize="11sp" />
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_fullscreen_exit"
+            app:tint="#FFFFFF"
+            android:contentDescription="Exit Fullscreen Console" />
 
     </LinearLayout>
 
-    <!-- 2. Standard Controls Container (Hidden in Console-Only mode) -->
+    <!-- 2. Standard Header Toolbar (Clean, High Contrast, Material Icons) -->
+    <LinearLayout
+        android:id="@+id/headerToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp"
+        android:background="#1E293B"
+        android:elevation="2dp">
+
+        <TextView
+            android:id="@+id/txtDebugConsoleTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/debug_console_title"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btnClearLogs"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_delete_outline"
+            app:tint="#94A3B8"
+            android:contentDescription="Clear Logs" />
+
+        <ImageButton
+            android:id="@+id/btnToggleFullscreen"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_fullscreen"
+            app:tint="#FFFFFF"
+            android:contentDescription="Fullscreen Console" />
+
+    </LinearLayout>
+
+    <!-- 3. Standard Controls Container (Hidden in Console-Only mode) -->
     <LinearLayout
         android:id="@+id/containerStandardControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp">
 
-        <!-- Top Header Bar with Console-Only Toggle -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="4dp">
-
-            <TextView
-                android:id="@+id/txtDebugConsoleTitle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/debug_console_title"
-                android:textAppearance="?attr/textAppearanceTitleLarge"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btnToggleConsoleOnly"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/console_mode_expand"
-                android:textSize="11sp" />
-
-        </LinearLayout>
-
-        <!-- Status Card -->
+        <!-- Compact High-Contrast Status Card (Requirement 5) -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="4dp"
-            app:cardElevation="1dp"
-            app:cardCornerRadius="8dp">
+            android:layout_marginBottom="8dp"
+            app:cardBackgroundColor="#1E293B"
+            app:cardCornerRadius="10dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#334155"
+            app:cardElevation="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="8dp">
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp">
 
-                <TextView
-                    android:id="@+id/statusAccessibility"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:fontFamily="monospace"
-                    android:text="Accessibility Service: CHECKING..." />
+                    android:orientation="horizontal">
 
-                <TextView
-                    android:id="@+id/statusTruecaller"
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Accessibility Service"
+                        android:textColor="#94A3B8"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/statusAccessibility"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● CHECKING"
+                        android:fontFamily="monospace"
+                        android:textColor="#4ADE80"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:fontFamily="monospace"
-                    android:text="Truecaller: CHECKING..." />
+                    android:orientation="horizontal"
+                    android:layout_marginTop="5dp">
 
-                <TextView
-                    android:id="@+id/statusObservation"
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Truecaller"
+                        android:textColor="#94A3B8"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/statusTruecaller"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● CHECKING"
+                        android:fontFamily="monospace"
+                        android:textColor="#4ADE80"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:fontFamily="monospace"
-                    android:text="Observation: STOPPED" />
+                    android:orientation="horizontal"
+                    android:layout_marginTop="5dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Observation"
+                        android:textColor="#94A3B8"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/statusObservation"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● STOPPED"
+                        android:fontFamily="monospace"
+                        android:textColor="#94A3B8"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Main Section Switcher (Requirement 14: CALL HISTORY vs DEVELOPER DETAILS) -->
-        <LinearLayout
+        <!-- Collapsible Developer Tools (Requirement 9: Collapsed by default!) -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:layout_marginTop="2dp"
-            android:layout_marginBottom="4dp">
+            android:layout_marginBottom="8dp"
+            app:cardBackgroundColor="#1E293B"
+            app:cardCornerRadius="8dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#334155"
+            app:cardElevation="0dp">
 
-            <Button
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Collapsible Header -->
+                <LinearLayout
+                    android:id="@+id/headerDeveloperTools"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:src="@drawable/ic_settings"
+                        app:tint="#94A3B8"
+                        android:layout_marginEnd="8dp"
+                        android:contentDescription="Tools" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/developer_tools_title"
+                        android:textColor="#E2E8F0"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <ImageView
+                        android:id="@+id/imgExpandTools"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_expand_more"
+                        app:tint="#94A3B8"
+                        android:contentDescription="Expand" />
+
+                </LinearLayout>
+
+                <!-- Collapsed Body (hidden by default) -->
+                <LinearLayout
+                    android:id="@+id/containerToolsBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingBottom="8dp"
+                    android:visibility="gone">
+
+                    <!-- Secondary Tool Tabs -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="6dp">
+
+                        <Button
+                            android:id="@+id/tabAccessibility"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:text="A11y"
+                            android:textColor="#CBD5E1"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/tabSpeech"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:text="Speech"
+                            android:textColor="#CBD5E1"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/tabCallerIdDebug"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_weight="1.2"
+                            android:text="Simulators"
+                            android:textColor="#CBD5E1"
+                            android:textSize="11sp" />
+
+                    </LinearLayout>
+
+                    <!-- Panel 1: Accessibility Controls -->
+                    <LinearLayout
+                        android:id="@+id/panelAccessibility"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnOpenA11ySettings"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1.2"
+                                android:layout_marginEnd="4dp"
+                                android:text="Settings"
+                                android:textColor="#E2E8F0"
+                                android:textSize="11sp" />
+
+                            <Button
+                                android:id="@+id/btnStartObserving"
+                                style="?attr/materialButtonStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                android:text="Start"
+                                android:textSize="11sp" />
+
+                            <Button
+                                android:id="@+id/btnStopObserving"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:text="Stop"
+                                android:textColor="#E2E8F0"
+                                android:textSize="11sp" />
+
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnToggleVerboseA11y"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="match_parent"
+                            android:layout_height="36dp"
+                            android:layout_marginTop="4dp"
+                            android:text="Verbose Tree: OFF"
+                            android:textColor="#E2E8F0"
+                            android:textSize="11sp" />
+
+                    </LinearLayout>
+
+                    <!-- Panel 2: Speech Test Controls -->
+                    <LinearLayout
+                        android:id="@+id/panelSpeech"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnStartRecognizer"
+                                style="?attr/materialButtonStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                android:text="Start Recognizer"
+                                android:textSize="11sp" />
+
+                            <Button
+                                android:id="@+id/btnStopRecognizer"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:text="Stop Recognizer"
+                                android:textColor="#E2E8F0"
+                                android:textSize="11sp" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="4dp">
+
+                            <Button
+                                android:id="@+id/btnTestAnswer"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="34dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="2dp"
+                                android:text="Answer"
+                                android:textColor="#CBD5E1"
+                                android:textSize="10sp" />
+
+                            <Button
+                                android:id="@+id/btnTestReject"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="34dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="2dp"
+                                android:text="Reject"
+                                android:textColor="#CBD5E1"
+                                android:textSize="10sp" />
+
+                            <Button
+                                android:id="@+id/btnTestSilent"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="34dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="2dp"
+                                android:text="Silent"
+                                android:textColor="#CBD5E1"
+                                android:textSize="10sp" />
+
+                            <Button
+                                android:id="@+id/btnTestSpeaker"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="34dp"
+                                android:layout_weight="1"
+                                android:text="Speaker"
+                                android:textColor="#CBD5E1"
+                                android:textSize="10sp" />
+
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Panel 3: Caller-ID Simulators -->
+                    <LinearLayout
+                        android:id="@+id/panelCallerId"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnSimulateMatch"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="3dp"
+                                android:text="Match"
+                                android:textColor="#CBD5E1"
+                                android:textSize="11sp" />
+
+                            <Button
+                                android:id="@+id/btnSimulateMismatch"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="3dp"
+                                android:text="Mismatch"
+                                android:textColor="#CBD5E1"
+                                android:textSize="11sp" />
+
+                            <Button
+                                android:id="@+id/btnSimulateWaIncoming"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="3dp"
+                                android:text="WA In"
+                                android:textColor="#CBD5E1"
+                                android:textSize="11sp" />
+
+                            <Button
+                                android:id="@+id/btnSimulateWaOutgoing"
+                                style="?attr/materialButtonOutlinedStyle"
+                                android:layout_width="0dp"
+                                android:layout_height="36dp"
+                                android:layout_weight="1"
+                                android:text="WA Out"
+                                android:textColor="#CBD5E1"
+                                android:textSize="11sp" />
+
+                        </LinearLayout>
+
+                        <!-- Compact Live Card inside Simulators panel -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginTop="4dp"
+                            android:padding="6dp"
+                            android:background="#0B0F19">
+
+                            <TextView
+                                android:id="@+id/cardResultStatus"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="STATUS: IDLE"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8" />
+
+                            <TextView
+                                android:id="@+id/cardCallSource"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="Source: -" />
+
+                            <TextView
+                                android:id="@+id/cardDirection"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="Direction: -" />
+
+                            <TextView
+                                android:id="@+id/cardPhoneNumber"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="Number: None" />
+
+                            <TextView
+                                android:id="@+id/cardContactName"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="Contact: -" />
+
+                            <TextView
+                                android:id="@+id/cardTruecallerName"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="Truecaller: -" />
+
+                            <TextView
+                                android:id="@+id/cardAnnouncementName"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="Announced: -" />
+
+                            <TextView
+                                android:id="@+id/cardSource"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="Source: -" />
+
+                            <TextView
+                                android:id="@+id/cardTtsText"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:textSize="10sp"
+                                android:textColor="#94A3B8"
+                                android:text="TTS: -" />
+
+                            <TextView
+                                android:id="@+id/callerIdDebugText"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:visibility="gone" />
+
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Primary Navigation: Material Segmented Tabs (Requirement 6) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:orientation="horizontal"
+            android:background="@drawable/bg_segmented_container"
+            android:padding="3dp"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnViewHistory"
                 style="?attr/materialButtonStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:layout_marginEnd="6dp"
                 android:text="@string/btn_view_history"
                 android:textStyle="bold"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                app:cornerRadius="8dp" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnViewDeveloper"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:text="@string/btn_view_developer"
                 android:textStyle="bold"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                app:cornerRadius="8dp" />
 
         </LinearLayout>
 
-        <!-- Action / Copy Buttons Row (Requirement 13: Separate Copy Call History & Copy Developer Details) -->
+        <!-- Two Dedicated Copy Buttons with 0 clipping (Requirement 7) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:layout_marginBottom="4dp">
+            android:baselineAligned="false"
+            android:layout_marginBottom="8dp">
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCopyCallHistory"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="1.2"
-                android:layout_marginEnd="4dp"
+                android:layout_height="wrap_content"
+                android:minHeight="50dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
                 android:text="@string/btn_copy_call_history"
-                android:textSize="11sp" />
+                android:textColor="#F8FAFC"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:maxLines="2"
+                android:ellipsize="@null"
+                app:backgroundTint="#1E293B"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp"
+                app:cornerRadius="8dp"
+                app:icon="@drawable/ic_content_copy"
+                app:iconTint="#4ADE80"
+                app:iconGravity="textStart"
+                app:iconPadding="6dp" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCopyDeveloperDetails"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="1.2"
-                android:layout_marginEnd="4dp"
+                android:layout_height="wrap_content"
+                android:minHeight="50dp"
+                android:layout_weight="1"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
                 android:text="@string/btn_copy_developer_details"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnClearLogs"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="0.8"
-                android:text="🗑 Clear"
-                android:textSize="11sp" />
+                android:textColor="#F8FAFC"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:maxLines="2"
+                android:ellipsize="@null"
+                app:backgroundTint="#1E293B"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp"
+                app:cornerRadius="8dp"
+                app:icon="@drawable/ic_content_copy"
+                app:iconTint="#60A5FA"
+                app:iconGravity="textStart"
+                app:iconPadding="6dp" />
 
         </LinearLayout>
 
-        <!-- Developer Filters Row (Requirement 14: ALL, GSM, WHATSAPP, VOIP, BUGS) -->
+        <!-- Developer Filter Chips (Requirement 12: ALL, GSM, WHATSAPP, VOIP, BUGS) -->
         <HorizontalScrollView
             android:id="@+id/containerDeveloperFilters"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:scrollbars="none"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:layout_marginBottom="4dp"
+            android:layout_marginBottom="8dp"
             android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Filters: "
-                    android:textSize="11sp"
-                    android:textStyle="bold"
-                    android:layout_gravity="center_vertical"
-                    android:layout_marginEnd="4dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
                 <Button
                     android:id="@+id/chipFilterAll"
                     style="?attr/materialButtonStyle"
                     android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="6dp"
                     android:text="@string/filter_all"
-                    android:textSize="10sp" />
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
                 <Button
                     android:id="@+id/chipFilterGsm"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="6dp"
                     android:text="@string/filter_gsm"
-                    android:textSize="10sp" />
+                    android:textColor="#CBD5E1"
+                    android:textSize="11sp" />
 
                 <Button
                     android:id="@+id/chipFilterWhatsapp"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="6dp"
                     android:text="@string/filter_whatsapp"
-                    android:textSize="10sp" />
+                    android:textColor="#CBD5E1"
+                    android:textSize="11sp" />
 
                 <Button
                     android:id="@+id/chipFilterVoip"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="6dp"
                     android:text="@string/filter_voip"
-                    android:textSize="10sp" />
+                    android:textColor="#CBD5E1"
+                    android:textSize="11sp" />
 
                 <Button
                     android:id="@+id/chipFilterBugs"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
-                    android:layout_height="32dp"
+                    android:layout_height="34dp"
                     android:text="@string/filter_bugs"
-                    android:textSize="10sp" />
+                    android:textColor="#CBD5E1"
+                    android:textSize="11sp" />
 
             </LinearLayout>
         </HorizontalScrollView>
-
-        <!-- Secondary Diagnostic Tools Tabs (Accessibility / Speech / Caller-ID Test) -->
-        <HorizontalScrollView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:scrollbars="none"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:layout_marginBottom="2dp">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/tabAccessibility"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:text="⚙ A11y Tools"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/tabSpeech"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="4dp"
-                    android:text="🎤 Speech Test"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/tabCallerIdDebug"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:text="📞 Call Simulators"
-                    android:textSize="10sp" />
-
-            </LinearLayout>
-        </HorizontalScrollView>
-
-        <!-- Panel 1: Accessibility Controls (Dump Window completely removed!) -->
-        <LinearLayout
-            android:id="@+id/panelAccessibility"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingBottom="4dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btnOpenA11ySettings"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="36dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:text="⚙ A11y Settings"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnStartObserving"
-                    style="?attr/materialButtonStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="36dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:text="▶ Start"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnStopObserving"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="36dp"
-                    android:layout_weight="1"
-                    android:text="⏹ Stop"
-                    android:textSize="10sp" />
-
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btnToggleVerboseA11y"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="match_parent"
-                android:layout_height="34dp"
-                android:layout_marginTop="2dp"
-                android:text="Verbose Tree: OFF (Clean Debug)"
-                android:textSize="10sp" />
-
-        </LinearLayout>
-
-        <!-- Panel 2: Speech Test Controls -->
-        <LinearLayout
-            android:id="@+id/panelSpeech"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingBottom="4dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btnStartRecognizer"
-                    style="?attr/materialButtonStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:text="▶ Start Recognizer"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnStopRecognizer"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:text="⏹ Stop Recognizer"
-                    android:textSize="10sp" />
-
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="2dp">
-
-                <Button
-                    android:id="@+id/btnTestAnswer"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="2dp"
-                    android:text="Answer"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnTestReject"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="2dp"
-                    android:text="Reject"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnTestSilent"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="2dp"
-                    android:text="Silent"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnTestSpeaker"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:text="Speaker"
-                    android:textSize="10sp" />
-
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Panel 3: Caller-ID Simulators & Live Card -->
-        <LinearLayout
-            android:id="@+id/panelCallerId"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingBottom="4dp"
-            android:visibility="gone">
-
-            <!-- Active Call Card -->
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                app:cardElevation="1dp"
-                app:cardCornerRadius="8dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="8dp">
-
-                    <TextView
-                        android:id="@+id/cardResultStatus"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="STATUS         : IDLE"
-                        android:fontFamily="monospace"
-                        android:textStyle="bold"
-                        android:textSize="10sp"
-                        android:layout_marginBottom="2dp" />
-
-                    <TextView
-                        android:id="@+id/cardCallSource"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="Call Source    : -" />
-
-                    <TextView
-                        android:id="@+id/cardDirection"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="Direction      : -" />
-
-                    <TextView
-                        android:id="@+id/cardPhoneNumber"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="Number         : None" />
-
-                    <TextView
-                        android:id="@+id/cardContactName"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="Phone/Contacts : -" />
-
-                    <TextView
-                        android:id="@+id/cardTruecallerName"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="Truecaller     : -" />
-
-                    <TextView
-                        android:id="@+id/cardAnnouncementName"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="Announcement   : -" />
-
-                    <TextView
-                        android:id="@+id/cardSource"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="Source         : -" />
-
-                    <TextView
-                        android:id="@+id/cardTtsText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:textSize="10sp"
-                        android:text="TTS Text       : -" />
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Simulation Buttons -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btnSimulateMatch"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="3dp"
-                    android:text="🧪 Match"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnSimulateMismatch"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="3dp"
-                    android:text="⚠ Mismatch"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnSimulateWaIncoming"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="3dp"
-                    android:text="🧪 WA In"
-                    android:textSize="10sp" />
-
-                <Button
-                    android:id="@+id/btnSimulateWaOutgoing"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="32dp"
-                    android:layout_weight="1"
-                    android:text="🚫 WA Out"
-                    android:textSize="10sp" />
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/callerIdDebugText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:visibility="gone" />
 
     </LinearLayout>
 
-    <!-- 3. Console Log Display (Scrolls automatically to newest event) -->
+    <!-- 4. Console Log Display (Scrolls automatically to newest event, max screen space!) -->
     <ScrollView
         android:id="@+id/logScrollView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#0F172A"
-        android:padding="10dp"
+        android:background="#0B0F19"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
         android:fillViewport="true">
 
         <TextView
@@ -637,12 +787,40 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:textSize="11sp"
-            android:textColor="#E2E8F0"
-            android:lineSpacingExtra="2dp"
+            android:textSize="12sp"
+            android:textColor="#F8FAFC"
+            android:lineSpacingExtra="3dp"
             android:text=""
             android:scrollbars="vertical" />
 
     </ScrollView>
+
+    <!-- 5. Console-Only Bottom Action (Requirement 18: Copy Developer Details) -->
+    <LinearLayout
+        android:id="@+id/containerConsoleOnlyBottom"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:background="#1E293B"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnConsoleOnlyCopyDev"
+            style="?attr/materialButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/btn_copy_developer_details"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            app:icon="@drawable/ic_content_copy"
+            app:iconTint="#FFFFFF"
+            app:iconGravity="textStart"
+            app:backgroundTint="#2563EB"
+            app:cornerRadius="8dp" />
+
+    </LinearLayout>
 
 </LinearLayout>

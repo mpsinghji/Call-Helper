@@ -15,6 +15,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.view.View
 import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -24,56 +26,62 @@ import androidx.lifecycle.lifecycleScope
 import com.callhandler.service.R
 import com.callhandler.service.voice.VoiceCommand
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.Locale
 
 /**
- * Developer debug console for:
- * 1. Clean Call History inspection
- * 2. Detailed Developer technical timeline with filters (ALL, GSM, WHATSAPP, VOIP, BUGS)
- * 3. Separate Copy buttons for Clean History and Developer Details
- * 4. Console-Only mode with auto-scroll
- * 5. Truecaller accessibility tree & Speech recognizer diagnostic tools
+ * Developer debug console with:
+ * 1. Clean visual hierarchy and strong Material contrast
+ * 2. Prominent Call History and Developer Details navigation
+ * 3. 0 clipped buttons with full-label display
+ * 4. Collapsible Developer Tools (collapsed by default)
+ * 5. Fullscreen Console-Only mode with auto-scroll
  */
 class DebugConsoleActivity : AppCompatActivity() {
+
+    // Header views
+    private lateinit var headerToolbar: View
+    private lateinit var btnClearLogs: ImageButton
+    private lateinit var btnToggleFullscreen: ImageButton
 
     // Status views
     private lateinit var statusAccessibility: TextView
     private lateinit var statusTruecaller: TextView
     private lateinit var statusObservation: TextView
 
-    // Console-Only and Main Containers
+    // Console-Only Containers and views
     private lateinit var containerConsoleOnlyBar: View
-    private lateinit var containerStandardControls: View
-    private lateinit var containerDeveloperFilters: View
-
-    // Console-Only Controls
-    private lateinit var btnToggleConsoleOnly: Button
+    private lateinit var containerConsoleOnlyBottom: View
+    private lateinit var btnConsoleOnlyExit: ImageButton
     private lateinit var btnConsoleOnlyCopyDev: Button
-    private lateinit var btnConsoleOnlyExit: Button
+
+    // Standard Controls Container
+    private lateinit var containerStandardControls: View
+
+    // Collapsible Developer Tools
+    private lateinit var headerDeveloperTools: View
+    private lateinit var imgExpandTools: ImageView
+    private lateinit var containerToolsBody: View
 
     // Section Switcher Buttons
     private lateinit var btnViewHistory: Button
     private lateinit var btnViewDeveloper: Button
 
-    // Copy and Clear Buttons
+    // Copy Buttons
     private lateinit var btnCopyCallHistory: Button
     private lateinit var btnCopyDeveloperDetails: Button
-    private lateinit var btnClearLogs: Button
 
     // Filter Chips
+    private lateinit var containerDeveloperFilters: View
     private lateinit var chipFilterAll: Button
     private lateinit var chipFilterGsm: Button
     private lateinit var chipFilterWhatsapp: Button
     private lateinit var chipFilterVoip: Button
     private lateinit var chipFilterBugs: Button
 
-    // Collapsible Diagnostic Panels
+    // Collapsible Tool Panels
     private lateinit var panelAccessibility: View
     private lateinit var panelSpeech: View
     private lateinit var panelCallerId: View
-
-    // Verbose A11y toggle
     private lateinit var btnToggleVerboseA11y: Button
 
     // Caller-ID Card views
@@ -90,7 +98,6 @@ class DebugConsoleActivity : AppCompatActivity() {
     // Log views
     private lateinit var logTextView: TextView
     private lateinit var logScrollView: ScrollView
-    private lateinit var callerIdDebugText: TextView
 
     // State
     private var isDeveloperDetailsMode = false
@@ -105,48 +112,51 @@ class DebugConsoleActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_debug_console)
 
-        // Bind status views
+        // 1. Header Toolbar
+        headerToolbar = findViewById(R.id.headerToolbar)
+        btnClearLogs = findViewById(R.id.btnClearLogs)
+        btnToggleFullscreen = findViewById(R.id.btnToggleFullscreen)
+
+        // 2. Status Views
         statusAccessibility = findViewById(R.id.statusAccessibility)
         statusTruecaller = findViewById(R.id.statusTruecaller)
         statusObservation = findViewById(R.id.statusObservation)
 
-        // Bind containers
-        containerConsoleOnlyBar = findViewById(R.id.containerConsoleOnlyBar)
+        // 3. Containers
         containerStandardControls = findViewById(R.id.containerStandardControls)
-        containerDeveloperFilters = findViewById(R.id.containerDeveloperFilters)
-
-        // Bind console-only mode buttons
-        btnToggleConsoleOnly = findViewById(R.id.btnToggleConsoleOnly)
-        btnConsoleOnlyCopyDev = findViewById(R.id.btnConsoleOnlyCopyDev)
+        containerConsoleOnlyBar = findViewById(R.id.containerConsoleOnlyBar)
+        containerConsoleOnlyBottom = findViewById(R.id.containerConsoleOnlyBottom)
         btnConsoleOnlyExit = findViewById(R.id.btnConsoleOnlyExit)
+        btnConsoleOnlyCopyDev = findViewById(R.id.btnConsoleOnlyCopyDev)
 
-        // Bind sections
+        // 4. Collapsible Developer Tools
+        headerDeveloperTools = findViewById(R.id.headerDeveloperTools)
+        imgExpandTools = findViewById(R.id.imgExpandTools)
+        containerToolsBody = findViewById(R.id.containerToolsBody)
+
+        // 5. Section Switcher
         btnViewHistory = findViewById(R.id.btnViewHistory)
         btnViewDeveloper = findViewById(R.id.btnViewDeveloper)
 
-        // Bind copy & clear buttons
+        // 6. Copy Buttons
         btnCopyCallHistory = findViewById(R.id.btnCopyCallHistory)
         btnCopyDeveloperDetails = findViewById(R.id.btnCopyDeveloperDetails)
-        btnClearLogs = findViewById(R.id.btnClearLogs)
 
-        // Bind filter chips
+        // 7. Filter Chips
+        containerDeveloperFilters = findViewById(R.id.containerDeveloperFilters)
         chipFilterAll = findViewById(R.id.chipFilterAll)
         chipFilterGsm = findViewById(R.id.chipFilterGsm)
         chipFilterWhatsapp = findViewById(R.id.chipFilterWhatsapp)
         chipFilterVoip = findViewById(R.id.chipFilterVoip)
         chipFilterBugs = findViewById(R.id.chipFilterBugs)
 
-        // Panels
+        // 8. Tool Panels
         panelAccessibility = findViewById(R.id.panelAccessibility)
         panelSpeech = findViewById(R.id.panelSpeech)
         panelCallerId = findViewById(R.id.panelCallerId)
+        btnToggleVerboseA11y = findViewById(R.id.btnToggleVerboseA11y)
 
-        // Log views
-        logTextView = findViewById(R.id.logTextView)
-        logScrollView = findViewById(R.id.logScrollView)
-        callerIdDebugText = findViewById(R.id.callerIdDebugText)
-
-        // Caller-ID card views
+        // 9. Card Views
         cardResultStatus = findViewById(R.id.cardResultStatus)
         cardCallSource = findViewById(R.id.cardCallSource)
         cardDirection = findViewById(R.id.cardDirection)
@@ -157,7 +167,34 @@ class DebugConsoleActivity : AppCompatActivity() {
         cardSource = findViewById(R.id.cardSource)
         cardTtsText = findViewById(R.id.cardTtsText)
 
-        // Tab buttons for tools
+        // 10. Log Views
+        logTextView = findViewById(R.id.logTextView)
+        logScrollView = findViewById(R.id.logScrollView)
+
+        // Setup Header Actions
+        btnClearLogs.setOnClickListener {
+            DebugLogStore.clear()
+            CallDebugTracker.clearAll()
+            renderLogs()
+            Toast.makeText(this, "Logs & Sessions cleared", Toast.LENGTH_SHORT).show()
+        }
+        btnToggleFullscreen.setOnClickListener {
+            setConsoleOnlyMode(true)
+        }
+        btnConsoleOnlyExit.setOnClickListener {
+            setConsoleOnlyMode(false)
+        }
+
+        // Setup Collapsible Developer Tools (Requirement 9)
+        headerDeveloperTools.setOnClickListener {
+            val isCurrentlyVisible = containerToolsBody.visibility == View.VISIBLE
+            containerToolsBody.visibility = if (isCurrentlyVisible) View.GONE else View.VISIBLE
+            imgExpandTools.setImageResource(
+                if (isCurrentlyVisible) R.drawable.ic_expand_more else R.drawable.ic_expand_less
+            )
+        }
+
+        // Tool Tabs inside Collapsible Section
         findViewById<Button>(R.id.tabAccessibility).setOnClickListener { showPanel(0) }
         findViewById<Button>(R.id.tabSpeech).setOnClickListener { showPanel(1) }
         findViewById<Button>(R.id.tabCallerIdDebug).setOnClickListener { showPanel(2) }
@@ -172,21 +209,19 @@ class DebugConsoleActivity : AppCompatActivity() {
                 svc.startObserving()
                 updateStatus()
             } else {
-                Toast.makeText(this, "Enable the accessibility service first", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Enable accessibility service in Settings first", Toast.LENGTH_LONG).show()
             }
         }
         findViewById<Button>(R.id.btnStopObserving).setOnClickListener {
             TruecallerAccessibilityService.instance?.stopObserving()
             updateStatus()
         }
-
-        btnToggleVerboseA11y = findViewById(R.id.btnToggleVerboseA11y)
         btnToggleVerboseA11y.setOnClickListener {
             TruecallerAccessibilityService.verboseLogging = !TruecallerAccessibilityService.verboseLogging
             updateVerboseA11yButton()
         }
 
-        // Section Switcher Listeners
+        // Section Navigation (Requirement 6)
         btnViewHistory.setOnClickListener {
             isDeveloperDetailsMode = false
             updateSectionUi()
@@ -198,37 +233,18 @@ class DebugConsoleActivity : AppCompatActivity() {
             renderLogs()
         }
 
-        // Two Copy Buttons Listeners (Requirement 13)
+        // Dedicated Copy Buttons (Requirement 7)
         btnCopyCallHistory.setOnClickListener {
-            val text = CallDebugTracker.exportCleanCallHistory()
-            copyToClipboard(text, "Call History")
+            copyToClipboard(CallDebugTracker.exportCleanCallHistory(), "Call History")
         }
         btnCopyDeveloperDetails.setOnClickListener {
-            val text = CallDebugTracker.exportDeveloperDetails()
-            copyToClipboard(text, "Developer Details")
+            copyToClipboard(CallDebugTracker.exportDeveloperDetails(), "Developer Details")
         }
         btnConsoleOnlyCopyDev.setOnClickListener {
-            val text = CallDebugTracker.exportDeveloperDetails()
-            copyToClipboard(text, "Developer Details")
+            copyToClipboard(CallDebugTracker.exportDeveloperDetails(), "Developer Details")
         }
 
-        // Clear Logs
-        btnClearLogs.setOnClickListener {
-            DebugLogStore.clear()
-            CallDebugTracker.clearAll()
-            renderLogs()
-            Toast.makeText(this, "Logs & Sessions cleared", Toast.LENGTH_SHORT).show()
-        }
-
-        // Console-Only Mode Listeners (Requirement 15)
-        btnToggleConsoleOnly.setOnClickListener {
-            setConsoleOnlyMode(true)
-        }
-        btnConsoleOnlyExit.setOnClickListener {
-            setConsoleOnlyMode(false)
-        }
-
-        // Filter Chip Listeners (Requirement 14)
+        // Developer Filter Chips (Requirement 12)
         chipFilterAll.setOnClickListener { setDeveloperFilter(DeveloperFilter.ALL) }
         chipFilterGsm.setOnClickListener { setDeveloperFilter(DeveloperFilter.GSM) }
         chipFilterWhatsapp.setOnClickListener { setDeveloperFilter(DeveloperFilter.WHATSAPP) }
@@ -241,7 +257,7 @@ class DebugConsoleActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnSimulateWaIncoming).setOnClickListener { simulateWaCall(incoming = true) }
         findViewById<Button>(R.id.btnSimulateWaOutgoing).setOnClickListener { simulateWaCall(incoming = false) }
 
-        // Speech test controls
+        // Speech Test Controls
         findViewById<Button>(R.id.btnStartRecognizer).setOnClickListener { startTestRecognizer() }
         findViewById<Button>(R.id.btnStopRecognizer).setOnClickListener { stopTestRecognizer() }
         findViewById<Button>(R.id.btnTestAnswer).setOnClickListener { testCommandMatch("answer") }
@@ -249,33 +265,21 @@ class DebugConsoleActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnTestSilent).setOnClickListener { testCommandMatch("silent") }
         findViewById<Button>(R.id.btnTestSpeaker).setOnClickListener { testCommandMatch("speaker") }
 
-        // Observe log store & sessions
+        // Live Observation Observers
         lifecycleScope.launch {
-            DebugLogStore.logs.collect {
-                renderLogs()
-            }
+            DebugLogStore.logs.collect { renderLogs() }
+        }
+        lifecycleScope.launch {
+            CallDebugTracker.sessionHistory.collect { renderLogs() }
+        }
+        lifecycleScope.launch {
+            CallDebugTracker.activeSession.collect { renderLogs() }
+        }
+        lifecycleScope.launch {
+            CallDebugTracker.currentSnapshot.collect { snapshot -> updateCallerIdCard(snapshot) }
         }
 
-        lifecycleScope.launch {
-            CallDebugTracker.sessionHistory.collect {
-                renderLogs()
-            }
-        }
-
-        // Observe active session updates
-        lifecycleScope.launch {
-            CallDebugTracker.activeSession.collect {
-                renderLogs()
-            }
-        }
-
-        // Observe CallDebugTracker snapshot
-        lifecycleScope.launch {
-            CallDebugTracker.currentSnapshot.collect { snapshot ->
-                updateCallerIdCard(snapshot)
-            }
-        }
-
+        // Initialize UI States
         updateStatus()
         updateVerboseA11yButton()
         updateSectionUi()
@@ -286,12 +290,16 @@ class DebugConsoleActivity : AppCompatActivity() {
     private fun setConsoleOnlyMode(enabled: Boolean) {
         isConsoleOnlyMode = enabled
         if (enabled) {
+            headerToolbar.visibility = View.GONE
             containerStandardControls.visibility = View.GONE
             containerConsoleOnlyBar.visibility = View.VISIBLE
+            containerConsoleOnlyBottom.visibility = View.VISIBLE
             isDeveloperDetailsMode = true
         } else {
+            headerToolbar.visibility = View.VISIBLE
             containerStandardControls.visibility = View.VISIBLE
             containerConsoleOnlyBar.visibility = View.GONE
+            containerConsoleOnlyBottom.visibility = View.GONE
         }
         updateSectionUi()
         renderLogs()
@@ -304,30 +312,47 @@ class DebugConsoleActivity : AppCompatActivity() {
     }
 
     private fun updateSectionUi() {
+        val selectedBg = Color.parseColor("#2563EB")
+        val unselectedBg = Color.TRANSPARENT
+        val selectedText = Color.WHITE
+        val unselectedText = Color.parseColor("#94A3B8")
+
         if (isDeveloperDetailsMode) {
-            btnViewDeveloper.setBackgroundColor(Color.parseColor("#1565C0"))
-            btnViewDeveloper.setTextColor(Color.WHITE)
-            btnViewHistory.setBackgroundColor(Color.TRANSPARENT)
-            btnViewHistory.setTextColor(Color.parseColor("#90CAF9"))
-            containerDeveloperFilters.visibility = View.VISIBLE
+            btnViewDeveloper.setBackgroundColor(selectedBg)
+            btnViewDeveloper.setTextColor(selectedText)
+            btnViewHistory.setBackgroundColor(unselectedBg)
+            btnViewHistory.setTextColor(unselectedText)
+            containerDeveloperFilters.visibility = if (isConsoleOnlyMode) View.GONE else View.VISIBLE
         } else {
-            btnViewHistory.setBackgroundColor(Color.parseColor("#2E7D32"))
-            btnViewHistory.setTextColor(Color.WHITE)
-            btnViewDeveloper.setBackgroundColor(Color.TRANSPARENT)
-            btnViewDeveloper.setTextColor(Color.parseColor("#A5D6A7"))
+            btnViewHistory.setBackgroundColor(Color.parseColor("#16A34A"))
+            btnViewHistory.setTextColor(selectedText)
+            btnViewDeveloper.setBackgroundColor(unselectedBg)
+            btnViewDeveloper.setTextColor(unselectedText)
             containerDeveloperFilters.visibility = View.GONE
         }
     }
 
     private fun updateFilterChipsUi() {
-        val activeColor = Color.parseColor("#1565C0")
-        val inactiveColor = Color.TRANSPARENT
+        val activeBg = Color.parseColor("#2563EB")
+        val inactiveBg = Color.parseColor("#1E293B")
+        val activeText = Color.WHITE
+        val inactiveText = Color.parseColor("#CBD5E1")
 
-        chipFilterAll.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.ALL) activeColor else inactiveColor)
-        chipFilterGsm.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.GSM) activeColor else inactiveColor)
-        chipFilterWhatsapp.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.WHATSAPP) activeColor else inactiveColor)
-        chipFilterVoip.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.VOIP) activeColor else inactiveColor)
-        chipFilterBugs.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.BUGS) Color.parseColor("#C62828") else inactiveColor)
+        fun applyChipStyle(button: Button, isActive: Boolean, isBug: Boolean = false) {
+            if (isActive) {
+                button.setBackgroundColor(if (isBug) Color.parseColor("#DC2626") else activeBg)
+                button.setTextColor(activeText)
+            } else {
+                button.setBackgroundColor(inactiveBg)
+                button.setTextColor(inactiveText)
+            }
+        }
+
+        applyChipStyle(chipFilterAll, currentDeveloperFilter == DeveloperFilter.ALL)
+        applyChipStyle(chipFilterGsm, currentDeveloperFilter == DeveloperFilter.GSM)
+        applyChipStyle(chipFilterWhatsapp, currentDeveloperFilter == DeveloperFilter.WHATSAPP)
+        applyChipStyle(chipFilterVoip, currentDeveloperFilter == DeveloperFilter.VOIP)
+        applyChipStyle(chipFilterBugs, currentDeveloperFilter == DeveloperFilter.BUGS, isBug = true)
     }
 
     private fun renderLogs() {
@@ -381,13 +406,22 @@ class DebugConsoleActivity : AppCompatActivity() {
 
     private fun updateStatus() {
         val serviceConnected = TruecallerAccessibilityService.isServiceConnected
-        statusAccessibility.text = "Accessibility Service: ${if (serviceConnected) "✅ ENABLED" else "❌ DISABLED"}"
+        statusAccessibility.text = if (serviceConnected) "● ENABLED" else "● DISABLED"
+        statusAccessibility.setTextColor(
+            if (serviceConnected) Color.parseColor("#4ADE80") else Color.parseColor("#F87171")
+        )
 
         val truecallerInstalled = isTruecallerInstalled()
-        statusTruecaller.text = "Truecaller: ${if (truecallerInstalled) "✅ INSTALLED" else "❌ NOT FOUND"}"
+        statusTruecaller.text = if (truecallerInstalled) "● INSTALLED" else "● NOT FOUND"
+        statusTruecaller.setTextColor(
+            if (truecallerInstalled) Color.parseColor("#4ADE80") else Color.parseColor("#F87171")
+        )
 
         val observing = TruecallerAccessibilityService.instance?.observing == true
-        statusObservation.text = "Observation: ${if (observing) "🟢 RUNNING" else "⏹ STOPPED"}"
+        statusObservation.text = if (observing) "● RUNNING" else "● STOPPED"
+        statusObservation.setTextColor(
+            if (observing) Color.parseColor("#4ADE80") else Color.parseColor("#94A3B8")
+        )
     }
 
     private fun updateVerboseA11yButton() {
@@ -395,56 +429,56 @@ class DebugConsoleActivity : AppCompatActivity() {
         btnToggleVerboseA11y.text = if (isVerbose) {
             "Verbose Tree: ON (Full Dumps)"
         } else {
-            "Verbose Tree: OFF (Clean Debug)"
+            "Verbose Tree: OFF"
         }
     }
 
     private fun updateCallerIdCard(snapshot: CallDebugTracker.CallDebugSnapshot?) {
         if (snapshot == null) {
-            cardResultStatus.text = "STATUS         : IDLE"
+            cardResultStatus.text = "STATUS: IDLE"
             cardResultStatus.setTextColor(Color.GRAY)
-            cardCallSource.text = "Call Source    : -"
-            cardDirection.text = "Direction      : -"
-            cardPhoneNumber.text = "Number         : None"
-            cardContactName.text = "Phone/Contacts : -"
-            cardTruecallerName.text = "Truecaller     : -"
-            cardAnnouncementName.text = "Announcement   : -"
-            cardSource.text = "Source         : -"
-            cardTtsText.text = "TTS Text       : -"
+            cardCallSource.text = "Source: -"
+            cardDirection.text = "Direction: -"
+            cardPhoneNumber.text = "Number: None"
+            cardContactName.text = "Contact: -"
+            cardTruecallerName.text = "Truecaller: -"
+            cardAnnouncementName.text = "Announced: -"
+            cardSource.text = "Source: -"
+            cardTtsText.text = "TTS: -"
             return
         }
 
         when {
             snapshot.bugCount > 0 -> {
-                cardResultStatus.text = "RESULT         : ⚠ BUG DETECTED (${snapshot.bugCount})"
+                cardResultStatus.text = "RESULT: ⚠ BUG DETECTED (${snapshot.bugCount})"
                 cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
             }
             snapshot.announcementName == "BLOCKED" -> {
-                cardResultStatus.text = "RESULT         : 🚫 BLOCKED (${snapshot.reason ?: "POLICY"})"
+                cardResultStatus.text = "RESULT: 🚫 BLOCKED (${snapshot.reason ?: "POLICY"})"
                 cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
             }
             snapshot.announcementName != null -> {
-                cardResultStatus.text = "RESULT         : ✓ IDENTITY ANNOUNCED"
-                cardResultStatus.setTextColor(Color.parseColor("#4CAF50"))
+                cardResultStatus.text = "RESULT: ✓ IDENTITY ANNOUNCED"
+                cardResultStatus.setTextColor(Color.parseColor("#4ADE80"))
             }
             snapshot.isRinging -> {
-                cardResultStatus.text = "STATUS         : 📞 CALL IN PROGRESS"
-                cardResultStatus.setTextColor(Color.parseColor("#FFC107"))
+                cardResultStatus.text = "STATUS: 📞 CALL IN PROGRESS"
+                cardResultStatus.setTextColor(Color.parseColor("#FBBF24"))
             }
             else -> {
-                cardResultStatus.text = "STATUS         : IDLE"
+                cardResultStatus.text = "STATUS: IDLE"
                 cardResultStatus.setTextColor(Color.GRAY)
             }
         }
 
-        cardCallSource.text = "Call Source    : ${snapshot.callSource.displayName}"
-        cardDirection.text = "Direction      : ${snapshot.callDirection ?: "-"}"
-        cardPhoneNumber.text = "Number         : ${snapshot.phoneNumber ?: "Unknown"}"
-        cardContactName.text = "Phone/Contacts : ${snapshot.contactName ?: "Unknown"}"
-        cardTruecallerName.text = "Truecaller     : ${snapshot.truecallerName ?: "Waiting..."}"
-        cardAnnouncementName.text = "Announcement   : ${snapshot.announcementName ?: "Waiting..."}"
-        cardSource.text = "Source         : ${snapshot.announcementSource ?: "-"}"
-        cardTtsText.text = "TTS Text       : ${snapshot.ttsText ?: "-"}"
+        cardCallSource.text = "Source: ${snapshot.callSource.displayName}"
+        cardDirection.text = "Direction: ${snapshot.callDirection ?: "-"}"
+        cardPhoneNumber.text = "Number: ${snapshot.phoneNumber ?: "Unknown"}"
+        cardContactName.text = "Contact: ${snapshot.contactName ?: "Unknown"}"
+        cardTruecallerName.text = "Truecaller: ${snapshot.truecallerName ?: "Waiting..."}"
+        cardAnnouncementName.text = "Announced: ${snapshot.announcementName ?: "Waiting..."}"
+        cardSource.text = "Source: ${snapshot.announcementSource ?: "-"}"
+        cardTtsText.text = "TTS: ${snapshot.ttsText ?: "-"}"
     }
 
     private fun simulateCall(mismatch: Boolean) {

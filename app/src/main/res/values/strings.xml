@@ -84,7 +84,7 @@
     <string name="truecaller_a11y_label">VCA Truecaller Debug</string>
     <string name="truecaller_a11y_description">Observes Truecaller overlay for caller ID announcements.</string>
     <string name="debug_console_title">Truecaller Debug Console</string>
-    <string name="btn_debug_console">🔬 Open Truecaller Debug Console</string>
+    <string name="btn_debug_console">Open Truecaller Debug Console</string>
 
     <!-- Spam calls -->
     <string name="pref_cat_spam">Spam calls</string>
@@ -100,18 +100,18 @@
     <string name="btn_export_current_session">Export Current Session</string>
     <string name="btn_export_last_10">Export Last 10 Sessions</string>
     <string name="btn_export_debug_log">Export Debug Log</string>
-    <string name="btn_view_history">📋 Call History</string>
-    <string name="btn_view_developer">🔬 Developer Details</string>
-    <string name="btn_copy_call_history">📋 Copy Call History</string>
-    <string name="btn_copy_developer_details">🔬 Copy Developer Details</string>
+    <string name="btn_view_history">CALL HISTORY</string>
+    <string name="btn_view_developer">DEVELOPER DETAILS</string>
+    <string name="btn_copy_call_history">Copy Call\nHistory</string>
+    <string name="btn_copy_developer_details">Copy Developer\nDetails</string>
     <string name="filter_all">ALL</string>
     <string name="filter_gsm">GSM</string>
     <string name="filter_whatsapp">WHATSAPP</string>
     <string name="filter_voip">VOIP</string>
     <string name="filter_bugs">BUGS</string>
     <string name="console_only_title">Developer Console</string>
-    <string name="console_mode_expand">⛶ Expand</string>
-    <string name="console_mode_exit">✕ Normal</string>
+    <string name="developer_tools_title">Developer Tools</string>
+    <string name="clear_logs_confirmation">Clear logs and call history?</string>
 
     <!-- About Section -->
     <string name="about_section_title">About Call Handler</string>
