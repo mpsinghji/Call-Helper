@@ -25,16 +25,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.callhandler.service.R
 import com.callhandler.service.voice.VoiceCommand
+import com.google.android.material.button.MaterialButtonToggleGroup
 import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
- * Developer debug console with:
- * 1. Clean visual hierarchy and strong Material contrast
- * 2. Prominent Call History and Developer Details navigation
- * 3. 0 clipped buttons with full-label display
- * 4. Collapsible Developer Tools (collapsed by default)
- * 5. Fullscreen Console-Only mode with auto-scroll
+ * Developer debug console matching the application's Material 3 theme.
  */
 class DebugConsoleActivity : AppCompatActivity() {
 
@@ -62,7 +58,8 @@ class DebugConsoleActivity : AppCompatActivity() {
     private lateinit var imgExpandTools: ImageView
     private lateinit var containerToolsBody: View
 
-    // Section Switcher Buttons
+    // Section Toggle Group & Buttons
+    private lateinit var toggleGroupSection: MaterialButtonToggleGroup
     private lateinit var btnViewHistory: Button
     private lateinit var btnViewDeveloper: Button
 
@@ -134,7 +131,8 @@ class DebugConsoleActivity : AppCompatActivity() {
         imgExpandTools = findViewById(R.id.imgExpandTools)
         containerToolsBody = findViewById(R.id.containerToolsBody)
 
-        // 5. Section Switcher
+        // 5. Section Toggle Group
+        toggleGroupSection = findViewById(R.id.toggleGroupSection)
         btnViewHistory = findViewById(R.id.btnViewHistory)
         btnViewDeveloper = findViewById(R.id.btnViewDeveloper)
 
@@ -171,7 +169,7 @@ class DebugConsoleActivity : AppCompatActivity() {
         logTextView = findViewById(R.id.logTextView)
         logScrollView = findViewById(R.id.logScrollView)
 
-        // Setup Header Actions
+        // Header Actions
         btnClearLogs.setOnClickListener {
             DebugLogStore.clear()
             CallDebugTracker.clearAll()
@@ -185,7 +183,7 @@ class DebugConsoleActivity : AppCompatActivity() {
             setConsoleOnlyMode(false)
         }
 
-        // Setup Collapsible Developer Tools (Requirement 9)
+        // Collapsible Developer Tools (Requirement 9)
         headerDeveloperTools.setOnClickListener {
             val isCurrentlyVisible = containerToolsBody.visibility == View.VISIBLE
             containerToolsBody.visibility = if (isCurrentlyVisible) View.GONE else View.VISIBLE
@@ -221,16 +219,14 @@ class DebugConsoleActivity : AppCompatActivity() {
             updateVerboseA11yButton()
         }
 
-        // Section Navigation (Requirement 6)
-        btnViewHistory.setOnClickListener {
-            isDeveloperDetailsMode = false
-            updateSectionUi()
-            renderLogs()
-        }
-        btnViewDeveloper.setOnClickListener {
-            isDeveloperDetailsMode = true
-            updateSectionUi()
-            renderLogs()
+        // Section Toggle Group Listener (Requirement 6)
+        toggleGroupSection.check(R.id.btnViewHistory)
+        toggleGroupSection.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                isDeveloperDetailsMode = (checkedId == R.id.btnViewDeveloper)
+                updateSectionUi()
+                renderLogs()
+            }
         }
 
         // Dedicated Copy Buttons (Requirement 7)
@@ -312,39 +308,24 @@ class DebugConsoleActivity : AppCompatActivity() {
     }
 
     private fun updateSectionUi() {
-        val selectedBg = Color.parseColor("#2563EB")
-        val unselectedBg = Color.TRANSPARENT
-        val selectedText = Color.WHITE
-        val unselectedText = Color.parseColor("#94A3B8")
-
-        if (isDeveloperDetailsMode) {
-            btnViewDeveloper.setBackgroundColor(selectedBg)
-            btnViewDeveloper.setTextColor(selectedText)
-            btnViewHistory.setBackgroundColor(unselectedBg)
-            btnViewHistory.setTextColor(unselectedText)
-            containerDeveloperFilters.visibility = if (isConsoleOnlyMode) View.GONE else View.VISIBLE
-        } else {
-            btnViewHistory.setBackgroundColor(Color.parseColor("#16A34A"))
-            btnViewHistory.setTextColor(selectedText)
-            btnViewDeveloper.setBackgroundColor(unselectedBg)
-            btnViewDeveloper.setTextColor(unselectedText)
-            containerDeveloperFilters.visibility = View.GONE
+        val targetId = if (isDeveloperDetailsMode) R.id.btnViewDeveloper else R.id.btnViewHistory
+        if (toggleGroupSection.checkedButtonId != targetId) {
+            toggleGroupSection.check(targetId)
         }
+        containerDeveloperFilters.visibility = if (isDeveloperDetailsMode && !isConsoleOnlyMode) View.VISIBLE else View.GONE
     }
 
     private fun updateFilterChipsUi() {
-        val activeBg = Color.parseColor("#2563EB")
-        val inactiveBg = Color.parseColor("#1E293B")
-        val activeText = Color.WHITE
-        val inactiveText = Color.parseColor("#CBD5E1")
+        val activeBg = ContextCompat.getColor(this, R.color.ic_launcher_background)
+        val bugColor = ContextCompat.getColor(this, R.color.status_required)
 
         fun applyChipStyle(button: Button, isActive: Boolean, isBug: Boolean = false) {
             if (isActive) {
-                button.setBackgroundColor(if (isBug) Color.parseColor("#DC2626") else activeBg)
-                button.setTextColor(activeText)
+                button.setBackgroundColor(if (isBug) bugColor else activeBg)
+                button.setTextColor(Color.WHITE)
             } else {
-                button.setBackgroundColor(inactiveBg)
-                button.setTextColor(inactiveText)
+                button.setBackgroundColor(Color.TRANSPARENT)
+                button.setTextColor(Color.GRAY)
             }
         }
 
@@ -405,23 +386,20 @@ class DebugConsoleActivity : AppCompatActivity() {
     }
 
     private fun updateStatus() {
+        val grantedColor = ContextCompat.getColor(this, R.color.status_granted)
+        val requiredColor = ContextCompat.getColor(this, R.color.status_required)
+
         val serviceConnected = TruecallerAccessibilityService.isServiceConnected
         statusAccessibility.text = if (serviceConnected) "● ENABLED" else "● DISABLED"
-        statusAccessibility.setTextColor(
-            if (serviceConnected) Color.parseColor("#4ADE80") else Color.parseColor("#F87171")
-        )
+        statusAccessibility.setTextColor(if (serviceConnected) grantedColor else requiredColor)
 
         val truecallerInstalled = isTruecallerInstalled()
         statusTruecaller.text = if (truecallerInstalled) "● INSTALLED" else "● NOT FOUND"
-        statusTruecaller.setTextColor(
-            if (truecallerInstalled) Color.parseColor("#4ADE80") else Color.parseColor("#F87171")
-        )
+        statusTruecaller.setTextColor(if (truecallerInstalled) grantedColor else requiredColor)
 
         val observing = TruecallerAccessibilityService.instance?.observing == true
         statusObservation.text = if (observing) "● RUNNING" else "● STOPPED"
-        statusObservation.setTextColor(
-            if (observing) Color.parseColor("#4ADE80") else Color.parseColor("#94A3B8")
-        )
+        statusObservation.setTextColor(if (observing) grantedColor else Color.GRAY)
     }
 
     private fun updateVerboseA11yButton() {
@@ -434,6 +412,10 @@ class DebugConsoleActivity : AppCompatActivity() {
     }
 
     private fun updateCallerIdCard(snapshot: CallDebugTracker.CallDebugSnapshot?) {
+        val requiredColor = ContextCompat.getColor(this, R.color.status_required)
+        val grantedColor = ContextCompat.getColor(this, R.color.status_granted)
+        val optionalColor = ContextCompat.getColor(this, R.color.status_optional)
+
         if (snapshot == null) {
             cardResultStatus.text = "STATUS: IDLE"
             cardResultStatus.setTextColor(Color.GRAY)
@@ -451,19 +433,19 @@ class DebugConsoleActivity : AppCompatActivity() {
         when {
             snapshot.bugCount > 0 -> {
                 cardResultStatus.text = "RESULT: ⚠ BUG DETECTED (${snapshot.bugCount})"
-                cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
+                cardResultStatus.setTextColor(requiredColor)
             }
             snapshot.announcementName == "BLOCKED" -> {
                 cardResultStatus.text = "RESULT: 🚫 BLOCKED (${snapshot.reason ?: "POLICY"})"
-                cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
+                cardResultStatus.setTextColor(requiredColor)
             }
             snapshot.announcementName != null -> {
                 cardResultStatus.text = "RESULT: ✓ IDENTITY ANNOUNCED"
-                cardResultStatus.setTextColor(Color.parseColor("#4ADE80"))
+                cardResultStatus.setTextColor(grantedColor)
             }
             snapshot.isRinging -> {
                 cardResultStatus.text = "STATUS: 📞 CALL IN PROGRESS"
-                cardResultStatus.setTextColor(Color.parseColor("#FBBF24"))
+                cardResultStatus.setTextColor(optionalColor)
             }
             else -> {
                 cardResultStatus.text = "STATUS: IDLE"
