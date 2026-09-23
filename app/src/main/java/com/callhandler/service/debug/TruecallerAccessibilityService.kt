@@ -109,7 +109,7 @@ class TruecallerAccessibilityService : AccessibilityService() {
         Log.i(TAG, "Parsed Truecaller info: $announcement")
 
         // Notify active CallDebugTracker timeline
-        CallDebugTracker.onTruecallerResult(info.phoneNumber, announcement)
+        CallDebugTracker.onTruecallerResult(info.phoneNumber, announcement, info.spamStatus)
 
         // Notify active listener or service
         onCallerInfoDetected?.invoke(info)
@@ -119,6 +119,8 @@ class TruecallerAccessibilityService : AccessibilityService() {
             val intent = Intent(this, CallHandlerService::class.java).apply {
                 action = CallHandlerService.ACTION_TRUECALLER_UPDATE
                 putExtra(CallHandlerService.EXTRA_CALLER_NAME, announcement)
+                putExtra(CallHandlerService.EXTRA_CALLER_NUMBER, info.phoneNumber)
+                putExtra(CallHandlerService.EXTRA_SPAM_STATUS, info.spamStatus.name)
             }
             startService(intent)
         }

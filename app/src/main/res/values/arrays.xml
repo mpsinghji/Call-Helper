@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="pref_spam_policy_entries">
+        <item>@string/pref_spam_policy_normal</item>
+        <item>@string/pref_spam_policy_warning</item>
+        <item>@string/pref_spam_policy_block</item>
+    </string-array>
+
+    <string-array name="pref_spam_policy_values">
+        <item>normal</item>
+        <item>warning</item>
+        <item>block</item>
+    </string-array>
+</resources>

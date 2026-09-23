@@ -3,6 +3,9 @@ package com.callhandler.service.identity
 import android.view.accessibility.AccessibilityNodeInfo
 import android.util.Log
 
+import com.callhandler.service.core.SpamStatus
+import com.callhandler.service.debug.CallDebugTracker
+
 /**
  * Parsed caller data from Truecaller's accessibility tree.
  *
@@ -10,24 +13,32 @@ import android.util.Log
  * @param phoneNumber  Phone number (e.g. "098171 62931")
  * @param label        Context tag or label (e.g. "Someone you may know", "Spam", "Business")
  * @param isSpam       True if classified as spam/fraud
+ * @param spamStatus   Derived classification (NORMAL, POSSIBLE_SPAM, SPAM, UNKNOWN)
  */
 data class TruecallerParsedInfo(
     val name: String?,
     val phoneNumber: String?,
     val label: String?,
-    val isSpam: Boolean
+    val isSpam: Boolean,
+    val spamStatus: SpamStatus = when {
+        isSpam -> SpamStatus.SPAM
+        label?.contains("possible spam", ignoreCase = true) == true -> SpamStatus.POSSIBLE_SPAM
+        label?.contains("spam", ignoreCase = true) == true ||
+            label?.contains("fraud", ignoreCase = true) == true ||
+            label?.contains("scam", ignoreCase = true) == true ||
+            label?.contains("telemarketer", ignoreCase = true) == true -> SpamStatus.SPAM
+        !name.isNullOrBlank() -> SpamStatus.NORMAL
+        else -> SpamStatus.UNKNOWN
+    }
 ) {
     /**
      * Best display name to announce.
-     * Priority: Name -> Spam/Fraud Warning -> Business/Label -> null
+     * Spam status is handled separately via policy rather than altering the caller's identity name.
      */
     val announcementName: String?
         get() = when {
-            isSpam && !name.isNullOrBlank() -> "Spam call from $name"
-            isSpam && !label.isNullOrBlank() && !isGenericLabel(label) -> label
-            isSpam -> "Spam call"
             !name.isNullOrBlank() -> name
-            !label.isNullOrBlank() && !isGenericLabel(label) -> label
+            !label.isNullOrBlank() && !isGenericLabel(label) && !TruecallerParser.isStaleOrStatusText(label) -> label
             else -> null
         }
 
@@ -150,12 +161,16 @@ object TruecallerParser {
         if (!nameNodes.isNullOrEmpty()) {
             for (node in nameNodes) {
                 val rawText = node.text?.toString()?.trim() ?: continue
+                if (isStaleOrStatusText(rawText)) {
+                    CallDebugTracker.onTruecallerStaleText(rawText)
+                    continue
+                }
                 if (rawText.isBlank() || isIgnored(rawText) || isCarrierOrLocationOrLabel(rawText)) continue
 
                 val (nameCandidate, spamFlag) = extractCleanNameAndSpam(rawText)
                 if (spamFlag) isSpam = true
 
-                if (nameCandidate != null && !isIgnored(nameCandidate) && !isCarrierOrLocationOrLabel(nameCandidate)) {
+                if (nameCandidate != null && !isIgnored(nameCandidate) && !isCarrierOrLocationOrLabel(nameCandidate) && !isStaleOrStatusText(nameCandidate)) {
                     if (!isPurePhoneNumber(nameCandidate)) {
                         extractedName = nameCandidate
                         break
@@ -173,12 +188,16 @@ object TruecallerParser {
             if (!titleNodes.isNullOrEmpty()) {
                 for (node in titleNodes) {
                     val rawText = node.text?.toString()?.trim() ?: continue
+                    if (isStaleOrStatusText(rawText)) {
+                        CallDebugTracker.onTruecallerStaleText(rawText)
+                        continue
+                    }
                     if (rawText.isBlank() || isIgnored(rawText) || isCarrierOrLocationOrLabel(rawText)) continue
 
                     val (nameCandidate, spamFlag) = extractCleanNameAndSpam(rawText)
                     if (spamFlag) isSpam = true
 
-                    if (nameCandidate != null && !isIgnored(nameCandidate) && !isCarrierOrLocationOrLabel(nameCandidate)) {
+                    if (nameCandidate != null && !isIgnored(nameCandidate) && !isCarrierOrLocationOrLabel(nameCandidate) && !isStaleOrStatusText(nameCandidate)) {
                         if (!isPurePhoneNumber(nameCandidate)) {
                             extractedName = nameCandidate
                             break
@@ -363,6 +382,49 @@ object TruecallerParser {
         return null
     }
 
+    /**
+     * Rejects UI status labels, history markers, and generic status indicators
+     * so they are never treated as caller names (Section 8).
+     */
+    fun isStaleOrStatusText(text: String): Boolean {
+        val trimmed = text.trim()
+        val lower = trimmed.lowercase()
+
+        // 1. "call ended", "call ended less than 1m ago", "call ended 25m ago", etc.
+        if (lower.startsWith("call ended")) return true
+        if (lower.endsWith(" ago")) return true
+        if (lower.contains("ended less than") || lower.contains("call ended")) return true
+
+        // 2. Specific status text required by Section 8
+        val staleExact = setOf(
+            "call ended",
+            "first time caller",
+            "new",
+            "driver",
+            "likely a business",
+            "spam",
+            "unknown",
+            "calling",
+            "ringing",
+            "call",
+            "missed call",
+            "incoming call",
+            "outgoing call",
+            "declined",
+            "busy",
+            "unavailable",
+            "community suggestion",
+            "identified by truecaller",
+            "someone you may know",
+            "view profile",
+            "search numbers",
+            "delivery",
+            "personal",
+            "business"
+        )
+        return staleExact.contains(lower)
+    }
+
     private val KNOWN_NON_NAME_LABELS = setOf(
         "first time caller",
         "likely a business",
@@ -384,6 +446,7 @@ object TruecallerParser {
 
     private fun isCarrierOrLocationOrLabel(text: String): Boolean {
         val lower = text.lowercase().trim()
+        if (isStaleOrStatusText(text)) return true
         if (KNOWN_NON_NAME_LABELS.contains(lower)) return true
         if (CARRIER_KEYWORDS.any { lower == it || lower.startsWith("$it ") || lower.contains(" $it ") }) return true
         if (lower.contains("india") || lower.contains("state")) return true

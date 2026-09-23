@@ -32,6 +32,19 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="@string/pref_cat_spam">
+
+        <ListPreference
+            android:key="pref_spam_announcement_policy"
+            android:title="@string/pref_spam_policy_title"
+            android:summary="%s"
+            android:dialogTitle="@string/pref_spam_policy_title"
+            android:entries="@array/pref_spam_policy_entries"
+            android:entryValues="@array/pref_spam_policy_values"
+            android:defaultValue="block" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/pref_cat_audio">
 
         <!-- TTS speech rate: 50..200 mapped to 0.5x..2.0x -->

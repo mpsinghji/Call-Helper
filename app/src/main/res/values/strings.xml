@@ -50,19 +50,12 @@
     <string name="perm_notification_desc">Required to detect caller ID from Truecaller and VoIP calls (WhatsApp, Instagram, etc.).</string>
     <string name="perm_overlay_title">Display Over Other Apps</string>
     <string name="perm_overlay_desc">Required for microphone access and active call overlay on Android 14+.</string>
-    <string name="perm_screening_title">Reliable Caller ID (Call Screening)</string>
-    <string name="perm_screening_desc">Retrieves caller numbers accurately on Android 10+ without blocking or filtering calls.</string>
     <string name="perm_rationale_title">Why these permissions?</string>
     <string name="perm_rationale">Call Handler listens for voice commands during incoming calls. Say \"Answer\", \"Reject\", \"Speaker\", or \"Silent\" while your phone is ringing.\n\nAll voice and call processing is performed entirely on-device. No personal call data, contacts, or voice audio is collected or transmitted.</string>
     <string name="setup_status">Setup: %1$d / %2$d completed</string>
     <string name="btn_grant_permissions">Grant permissions</string>
     <string name="btn_notification_access">Open notification access</string>
     <string name="btn_overlay_permission">Allow display overlay</string>
-    <string name="btn_call_screening_role">Enable call screening role</string>
-    <string name="call_screening_role_hint">Enables the phone number for saved-contact identification even when the system hides it from broadcast receivers.</string>
-    <string name="call_screening_role_granted">Reliable caller ID: enabled</string>
-    <string name="call_screening_role_not_granted">Reliable caller ID: not enabled</string>
-    <string name="call_screening_role_requires">Reliable caller ID requires Android 10 or newer</string>
 
     <!-- Tools Tab UI -->
     <string name="tools_title">Tools &amp; Diagnostics</string>
@@ -92,6 +85,23 @@
     <string name="truecaller_a11y_description">Observes Truecaller overlay for caller ID announcements.</string>
     <string name="debug_console_title">Truecaller Debug Console</string>
     <string name="btn_debug_console">🔬 Open Truecaller Debug Console</string>
+
+    <!-- Spam calls -->
+    <string name="pref_cat_spam">Spam calls</string>
+    <string name="pref_spam_policy_title">Spam call announcement</string>
+    <string name="pref_spam_policy_summary">Choose how suspected spam calls are handled</string>
+    <string name="pref_spam_policy_normal">Announce normally</string>
+    <string name="pref_spam_policy_warning">Announce with warning</string>
+    <string name="pref_spam_policy_block">Don\'t announce</string>
+    <string name="spam_warning_suffix">Possible spam caller.</string>
+    <string name="spam_danger_suffix">Spam caller.</string>
+
+    <!-- Debug Console UI -->
+    <string name="btn_export_current_session">Export Current Session</string>
+    <string name="btn_export_last_10">Export Last 10 Sessions</string>
+    <string name="btn_export_debug_log">Export Debug Log</string>
+    <string name="btn_view_history">📋 Call History</string>
+    <string name="btn_view_developer">🔬 Developer Details</string>
 
     <!-- About Section -->
     <string name="about_section_title">About Call Handler</string>

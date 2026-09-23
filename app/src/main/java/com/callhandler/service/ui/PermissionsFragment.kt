@@ -1,7 +1,6 @@
 package com.callhandler.service.ui
 
 import android.Manifest
-import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -14,7 +13,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -30,11 +28,6 @@ class PermissionsFragment : Fragment() {
             refreshPermissionState()
         }
 
-    private val callScreeningRoleLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            refreshPermissionState()
-        }
-
     private lateinit var statusText: TextView
     private lateinit var setupProgressBar: LinearProgressIndicator
     private lateinit var setupSubtext: TextView
@@ -47,10 +40,6 @@ class PermissionsFragment : Fragment() {
 
     private lateinit var badgeOverlay: TextView
     private lateinit var overlayPermissionButton: Button
-
-    private lateinit var badgeCallScreening: TextView
-    private lateinit var callScreeningRoleButton: Button
-    private lateinit var callScreeningHintText: TextView
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -78,11 +67,6 @@ class PermissionsFragment : Fragment() {
         badgeOverlay = view.findViewById(R.id.badgeOverlay)
         overlayPermissionButton = view.findViewById(R.id.overlayPermissionButton)
         overlayPermissionButton.setOnClickListener { openOverlaySettings() }
-
-        badgeCallScreening = view.findViewById(R.id.badgeCallScreening)
-        callScreeningRoleButton = view.findViewById(R.id.callScreeningRoleButton)
-        callScreeningRoleButton.setOnClickListener { requestCallScreeningRole() }
-        callScreeningHintText = view.findViewById(R.id.callScreeningHintText)
     }
 
     override fun onResume() {
@@ -123,22 +107,8 @@ class PermissionsFragment : Fragment() {
             normalButtonText = getString(R.string.btn_overlay_permission)
         )
 
-        val screeningGranted = isCallScreeningRoleGranted()
-        updateBadgeState(
-            badge = badgeCallScreening,
-            button = callScreeningRoleButton,
-            isGranted = screeningGranted,
-            grantedButtonText = getString(R.string.badge_granted),
-            normalButtonText = getString(R.string.btn_call_screening_role),
-            isOptional = true
-        )
-        callScreeningHintText.setText(
-            if (screeningGranted) R.string.call_screening_role_granted
-            else R.string.call_screening_role_not_granted
-        )
-
-        val completedSteps = listOf(runtimeGranted, listenerEnabled, overlayEnabled, screeningGranted).count { it }
-        val totalSteps = 4
+        val completedSteps = listOf(runtimeGranted, listenerEnabled, overlayEnabled).count { it }
+        val totalSteps = 3
 
         statusText.text = getString(R.string.setup_status, completedSteps, totalSteps)
         setupProgressBar.max = totalSteps
@@ -208,26 +178,7 @@ class PermissionsFragment : Fragment() {
         }
     }
 
-    private fun requestCallScreeningRole() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            Toast.makeText(
-                requireContext(),
-                R.string.call_screening_role_requires,
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-        val roleManager = requireContext().getSystemService(RoleManager::class.java) ?: return
-        callScreeningRoleLauncher.launch(
-            roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
-        )
-    }
 
-    private fun isCallScreeningRoleGranted(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
-        val roleManager = context?.getSystemService(RoleManager::class.java) ?: return false
-        return roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
-    }
 
     private fun openNotificationListenerSettings() {
         val context = requireContext()

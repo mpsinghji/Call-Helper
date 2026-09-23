@@ -2,6 +2,7 @@ package com.callhandler.service.identity
 
 import android.view.accessibility.AccessibilityNodeInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -120,7 +121,7 @@ class TruecallerParserTest {
     }
 
     @Test
-    fun testDirectIdSpamCallerOverlay_extractsSpamAnnouncement() {
+    fun testDirectIdSpamCallerOverlay_extractsSpamStatusAndCleanName() {
         val nameNode = createMockNode(
             text = "ABC Telecom",
             viewId = "com.truecaller:id/nameOrNumber"
@@ -141,7 +142,8 @@ class TruecallerParserTest {
         val result = TruecallerParser.parse(root)
         assertEquals("ABC Telecom", result?.name)
         assertTrue(result?.isSpam == true)
-        assertEquals("Spam call from ABC Telecom", result?.announcementName)
+        assertEquals("ABC Telecom", result?.announcementName)
+        assertEquals(com.callhandler.service.core.SpamStatus.SPAM, result?.spamStatus)
     }
 
     @Test
@@ -160,7 +162,7 @@ class TruecallerParserTest {
         val result = TruecallerParser.parse(root)
         assertEquals("ABC Telecom", result?.name)
         assertTrue(result?.isSpam == true)
-        assertEquals("Spam call from ABC Telecom", result?.announcementName)
+        assertEquals("ABC Telecom", result?.announcementName)
     }
 
     @Test
@@ -206,5 +208,24 @@ class TruecallerParserTest {
         val result = TruecallerParser.parse(root)
         assertEquals("Pavinder Jasrotia", result?.name)
         assertEquals("Pavinder Jasrotia", result?.announcementName)
+    }
+
+    @Test
+    fun testStaleStatusText_rejectedByParser() {
+        assertTrue(TruecallerParser.isStaleOrStatusText("Call ended less than 1m ago"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Call ended 25m ago"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Call ended"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("First time caller"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Driver"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("New"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Likely a business"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Spam"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Unknown"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Calling"))
+        assertTrue(TruecallerParser.isStaleOrStatusText("Ringing"))
+
+        assertFalse(TruecallerParser.isStaleOrStatusText("Pavinder Jasrotia"))
+        assertFalse(TruecallerParser.isStaleOrStatusText("Aman"))
+        assertFalse(TruecallerParser.isStaleOrStatusText("Casence Support"))
     }
 }

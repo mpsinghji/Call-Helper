@@ -157,6 +157,34 @@ class DebugConsoleActivity : AppCompatActivity() {
         cardSource = findViewById(R.id.cardSource)
         cardTtsText = findViewById(R.id.cardTtsText)
 
+        // History / Developer toggle
+        val btnViewHistory = findViewById<Button>(R.id.btnViewHistory)
+        val btnViewDeveloper = findViewById<Button>(R.id.btnViewDeveloper)
+
+        btnViewHistory.setOnClickListener {
+            isDeveloperDetailsMode = false
+            btnViewHistory.setBackgroundColor(Color.parseColor("#2E7D32"))
+            btnViewDeveloper.setBackgroundColor(Color.TRANSPARENT)
+            renderLogs()
+        }
+        btnViewDeveloper.setOnClickListener {
+            isDeveloperDetailsMode = true
+            btnViewDeveloper.setBackgroundColor(Color.parseColor("#2E7D32"))
+            btnViewHistory.setBackgroundColor(Color.TRANSPARENT)
+            renderLogs()
+        }
+
+        // Export buttons
+        findViewById<Button>(R.id.btnExportCurrent).setOnClickListener {
+            copyToClipboard(CallDebugTracker.exportCurrentSession(), "Current Session")
+        }
+        findViewById<Button>(R.id.btnExportLast10).setOnClickListener {
+            copyToClipboard(CallDebugTracker.exportLastSessions(10), "Last 10 Sessions")
+        }
+        findViewById<Button>(R.id.btnExportDebugLog).setOnClickListener {
+            copyToClipboard(CallDebugTracker.exportDebugLog(), "Debug Log")
+        }
+
         findViewById<Button>(R.id.btnSimulateMatch).setOnClickListener {
             simulateCall(mismatch = false)
         }
@@ -171,7 +199,8 @@ class DebugConsoleActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnClearCallerIdLogs).setOnClickListener {
             DebugLogStore.clear()
-            CallDebugTracker.reset()
+            CallDebugTracker.clearAll()
+            renderLogs()
         }
 
         // Speech test controls
@@ -183,20 +212,23 @@ class DebugConsoleActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnTestSpeaker).setOnClickListener { testCommandMatch("speaker") }
         findViewById<Button>(R.id.btnClearSpeechLogs).setOnClickListener {
             DebugLogStore.clear()
+            renderLogs()
         }
 
-        // Observe log store
+        // Observe log store & sessions
         lifecycleScope.launch {
-            DebugLogStore.logs.collect { entries ->
-                val text = entries.joinToString("\n") { it.formatted() }
-                logTextView.text = text
-                logScrollView.post {
-                    logScrollView.fullScroll(View.FOCUS_DOWN)
-                }
+            DebugLogStore.logs.collect {
+                renderLogs()
             }
         }
 
-        // Observe CallDebugTracker
+        lifecycleScope.launch {
+            CallDebugTracker.sessionHistory.collect {
+                renderLogs()
+            }
+        }
+
+        // Observe CallDebugTracker snapshot
         lifecycleScope.launch {
             CallDebugTracker.currentSnapshot.collect { snapshot ->
                 updateCallerIdCard(snapshot)
@@ -205,6 +237,37 @@ class DebugConsoleActivity : AppCompatActivity() {
 
         updateStatus()
         updateVerboseA11yButton()
+    }
+
+    private var isDeveloperDetailsMode = false
+
+    private fun renderLogs() {
+        val text = if (isDeveloperDetailsMode) {
+            val sessions = CallDebugTracker.sessionHistory.value
+            val devTimeline = if (sessions.isNotEmpty()) {
+                sessions.joinToString("\n\n") { CallDebugTracker.formatSessionDeveloperDetails(it) } + "\n\n=== RAW LOGS ===\n"
+            } else ""
+            devTimeline + DebugLogStore.logs.value.joinToString("\n") { it.formatted() }
+        } else {
+            val sessions = CallDebugTracker.sessionHistory.value
+            if (sessions.isNotEmpty()) {
+                sessions.joinToString("\n\n") { CallDebugTracker.formatCleanSessionCard(it) }
+            } else {
+                DebugLogStore.logs.value.joinToString("\n") { it.formatted() }
+            }
+        }
+
+        logTextView.text = text
+        logScrollView.post {
+            logScrollView.fullScroll(View.FOCUS_DOWN)
+        }
+    }
+
+    private fun copyToClipboard(content: String, label: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText(label, content)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(this, "$label copied to clipboard!", Toast.LENGTH_SHORT).show()
     }
 
     override fun onResume() {
@@ -267,17 +330,17 @@ class DebugConsoleActivity : AppCompatActivity() {
         }
 
         when {
-            snapshot.isMismatch -> {
-                cardResultStatus.text = "RESULT         : ⚠ IDENTITY MISMATCH"
+            snapshot.bugCount > 0 -> {
+                cardResultStatus.text = "RESULT         : ⚠ BUG DETECTED (${snapshot.bugCount})"
                 cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
-            }
-            snapshot.announcementName != null && snapshot.announcementName != "BLOCKED" -> {
-                cardResultStatus.text = "RESULT         : ✓ IDENTITY MATCH"
-                cardResultStatus.setTextColor(Color.parseColor("#4CAF50"))
             }
             snapshot.announcementName == "BLOCKED" -> {
                 cardResultStatus.text = "RESULT         : 🚫 BLOCKED (${snapshot.reason ?: "POLICY"})"
                 cardResultStatus.setTextColor(Color.parseColor("#FF5252"))
+            }
+            snapshot.announcementName != null -> {
+                cardResultStatus.text = "RESULT         : ✓ IDENTITY ANNOUNCED"
+                cardResultStatus.setTextColor(Color.parseColor("#4CAF50"))
             }
             snapshot.isRinging -> {
                 cardResultStatus.text = "STATUS         : 📞 CALL IN PROGRESS"
@@ -305,18 +368,19 @@ class DebugConsoleActivity : AppCompatActivity() {
 
         CallDebugTracker.reset()
         CallDebugTracker.onCallDetected(testNumber, "PHONE_STATE")
-        CallDebugTracker.onContactLookupResult(testNumber, null)
+        CallDebugTracker.onContactLookupResult(testNumber, "Aman")
         CallDebugTracker.onTruecallerResult(testNumber, tcName)
 
         if (mismatch) {
-            // Replicates the reported mismatch bug: Truecaller is Pavinder Jasrotia, but announcement is Aman
-            CallDebugTracker.onIdentitySelected(testNumber, "Aman", "TRUECALLER")
-            CallDebugTracker.onAnnouncementPrepared("Aman", "Call from Aman", "TRUECALLER")
-            CallDebugTracker.onTtsStarted("Call from Aman")
-        } else {
+            // Priority violation: Contact is Aman, but announcement selects Truecaller Pavinder Jasrotia
             CallDebugTracker.onIdentitySelected(testNumber, tcName, "TRUECALLER")
             CallDebugTracker.onAnnouncementPrepared(tcName, "Incoming call from $tcName", "TRUECALLER")
             CallDebugTracker.onTtsStarted("Incoming call from $tcName")
+        } else {
+            // Priority correct: Contact (Aman) beats Truecaller (Pavinder Jasrotia)
+            CallDebugTracker.onIdentitySelected(testNumber, "Aman", "CONTACT")
+            CallDebugTracker.onAnnouncementPrepared("Aman", "Incoming call from Aman", "CONTACT")
+            CallDebugTracker.onTtsStarted("Incoming call from Aman")
         }
         CallDebugTracker.onCallEnded()
     }

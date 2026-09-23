@@ -506,7 +506,8 @@ object VoipCallDetector {
             packageName = sbn.packageName,
             notifTitle = title,
             notifText = text,
-            detectorDecision = reason
+            detectorDecision = reason,
+            notificationKey = sbn.key
         )
     }
 

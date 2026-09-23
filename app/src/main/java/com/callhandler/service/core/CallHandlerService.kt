@@ -124,8 +124,10 @@ class CallHandlerService : Service() {
 
             ACTION_TRUECALLER_UPDATE -> {
                 val name = intent.getStringExtra(EXTRA_CALLER_NAME)
-                Log.d(TAG, "ACTION_TRUECALLER_UPDATE: name=$name")
-                if (name != null) identityManager.onTruecallerName(name)
+                val spamStatusStr = intent.getStringExtra(EXTRA_SPAM_STATUS)
+                val spamStatus = spamStatusStr?.let { runCatching { SpamStatus.valueOf(it) }.getOrNull() } ?: SpamStatus.UNKNOWN
+                Log.d(TAG, "ACTION_TRUECALLER_UPDATE: name=$name, spam=$spamStatus")
+                if (name != null) identityManager.onTruecallerName(name, spamStatus)
             }
         }
         return START_NOT_STICKY
@@ -162,6 +164,14 @@ class CallHandlerService : Service() {
 
         // Show initial phase on overlay
         debugTextView?.text = "📞 Incoming call"
+
+        // Record Bluetooth diagnostics
+        CallDebugTracker.recordBluetoothDiagnostics(
+            connected = audioRouter.isBluetoothAudioConnected(),
+            deviceName = null,
+            ttsRoute = "BLUETOOTH SCO",
+            speakerRoute = "SYSTEM RINGTONE"
+        )
 
         // Session: identity resolution → BT announcement → voice commands
         // Flow: overlay appears → TTS plays → listener starts after TTS
@@ -230,9 +240,33 @@ class CallHandlerService : Service() {
             return
         }
 
+        // Apply spam announcement policy
+        val isSpam = identity.spamStatus == SpamStatus.SPAM || identity.spamStatus == SpamStatus.POSSIBLE_SPAM
         val name = identity.displayName ?: getString(R.string.unknown_caller)
-        val text = getString(R.string.announce_incoming_call, name)
-        Log.i(TAG, "Announcing via Bluetooth: '$name'")
+        var text = getString(R.string.announce_incoming_call, name)
+
+        if (isSpam) {
+            when (settings.spamAnnouncementPolicy) {
+                com.callhandler.service.settings.SpamAnnouncementPolicy.BLOCK -> {
+                    Log.w(TAG, "Spam call announcement blocked by policy for '$name' (${identity.spamStatus})")
+                    CallDebugTracker.onAnnouncementBlocked("SPAM POLICY")
+                    return
+                }
+                com.callhandler.service.settings.SpamAnnouncementPolicy.WARNING -> {
+                    val warningSuffix = if (identity.spamStatus == SpamStatus.SPAM) {
+                        getString(R.string.spam_danger_suffix)
+                    } else {
+                        getString(R.string.spam_warning_suffix)
+                    }
+                    text = "$text $warningSuffix"
+                }
+                com.callhandler.service.settings.SpamAnnouncementPolicy.NORMAL -> {
+                    // Announce normally
+                }
+            }
+        }
+
+        Log.i(TAG, "Announcing via Bluetooth: '$name' (spam=${identity.spamStatus})")
         CallDebugTracker.onAnnouncementPrepared(
             name = name,
             text = text,
@@ -306,6 +340,7 @@ class CallHandlerService : Service() {
 
     private fun onCallAnswered() {
         if (!stateMachine.transitionTo(CallState.ANSWERED)) return
+        CallDebugTracker.recordActiveCallState()
         CallDebugTracker.onCallEnded()
 
         // Hold VOICE_CALL volume through Android's SCO re-initialization.
@@ -613,9 +648,10 @@ class CallHandlerService : Service() {
         const val EXTRA_NUMBER = "extra_number"
         const val EXTRA_IDENTITY_SOURCE = "extra_identity_source"
 
-        const val IDENTITY_SOURCE_CALL_SCREENING = "CALL_SCREENING"
         const val IDENTITY_SOURCE_PHONE_STATE = "PHONE_STATE"
         const val EXTRA_CALLER_NAME = "extra_caller_name"
+        const val EXTRA_CALLER_NUMBER = "extra_caller_number"
+        const val EXTRA_SPAM_STATUS = "extra_spam_status"
 
         private const val NOTIFICATION_ID = 42
         private const val TRUECALLER_WAIT_MS = 2500L

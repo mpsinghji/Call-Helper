@@ -1,6 +1,6 @@
 package com.callhandler.service.core
 
-/** Lifecycle states for one incoming-call session. */
+/** Lifecycle states for one incoming-call session in the telephone state machine. */
 enum class CallState {
     IDLE,
 
@@ -14,6 +14,25 @@ enum class CallState {
     ENDED
 }
 
+/** Lifecycle states for a call debug session. */
+enum class CallSessionState {
+    DETECTED,
+    IDENTIFYING,
+    IDENTIFIED,
+    ANNOUNCED,
+    ACTIVE,
+    ENDED,
+    BLOCKED
+}
+
+/** Spam classification states. */
+enum class SpamStatus {
+    NORMAL,
+    POSSIBLE_SPAM,
+    SPAM,
+    UNKNOWN
+}
+
 /** How the caller was identified, in priority order. */
 enum class IdentitySource { CONTACT, TRUECALLER, UNKNOWN }
 
@@ -23,10 +42,11 @@ enum class IdentitySource { CONTACT, TRUECALLER, UNKNOWN }
 data class CallerIdentity(
     val number: String?,
     val displayName: String?,
-    val source: IdentitySource
+    val source: IdentitySource,
+    val spamStatus: SpamStatus = SpamStatus.UNKNOWN
 ) {
     companion object {
-        fun unknown(number: String?) =
-            CallerIdentity(number, null, IdentitySource.UNKNOWN)
+        fun unknown(number: String?, spamStatus: SpamStatus = SpamStatus.UNKNOWN) =
+            CallerIdentity(number, null, IdentitySource.UNKNOWN, spamStatus)
     }
 }

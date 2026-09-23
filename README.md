@@ -37,7 +37,6 @@ If configuring your GitHub repository settings, the following metadata is recomm
 
 ### 🔍 Smart Caller Identification
 - **Local Contacts Match**: Instant zero-latency lookup for saved address book contacts.
-- **Android 10+ Call Screening Role**: Enables reliable caller number retrieval on modern Android versions where broadcast receivers are restricted.
 - **Truecaller Screen & Notification Scraping**: Waits a brief configurable window (~2.5s) for Truecaller to identify unknown numbers, dynamically updating announcements.
 - **False-Positive & Onboarding Filter**: Custom parser filters out Truecaller UI artifacts (e.g., "Get started", "Protect your family from scams", "Skip", promotional banners, and non-call notifications) to guarantee accurate caller names.
 
@@ -91,7 +90,6 @@ app/src/main/java/com/callhandler/service/
 ├── identity/
 │   ├── CallerIdentityManager.kt          — Multi-tier resolution (Contacts → Truecaller → Unknown)
 │   ├── CallNotificationListener.kt       — Notification listener for Truecaller & VoIP apps
-│   ├── IncomingCallScreeningService.kt   — Android 10+ CallScreeningService for reliable caller ID
 │   ├── TruecallerParser.kt               — Accessibility node parser with false-positive filtering
 │   └── VoipCallDetector.kt               — VoIP direction detection (incoming vs outgoing)
 ├── debug/
@@ -115,8 +113,7 @@ To enable all features, the app requires specific permissions:
 1. **Core Permissions**: Phone State, Call Log, Contacts, Microphone, and Bluetooth Connect (Android 12+).
 2. **Notification Access**: Required for Truecaller notification parsing and VoIP incoming call detection.
 3. **Display Over Other Apps (Overlay)**: Required for persistent microphone access and in-call status overlay on Android 14+.
-4. **Call Screening Role (Android 10+)**: Recommended for reliable incoming number resolution when system broadcast restrictions apply.
-5. **Battery Optimization**: Exclude Call Handler from battery optimization so background services and receivers remain responsive.
+4. **Battery Optimization**: Exclude Call Handler from battery optimization so background services and receivers remain responsive.
 
 ---
 

@@ -3,6 +3,17 @@ package com.callhandler.service.settings
 import android.content.Context
 import androidx.preference.PreferenceManager
 
+enum class SpamAnnouncementPolicy(val prefValue: String) {
+    NORMAL("normal"),
+    WARNING("warning"),
+    BLOCK("block");
+
+    companion object {
+        fun fromPref(value: String?): SpamAnnouncementPolicy =
+            entries.firstOrNull { it.prefValue.equals(value, ignoreCase = true) } ?: BLOCK
+    }
+}
+
 /**
  * Typed accessor over the app's SharedPreferences. Keys mirror
  * res/xml/preferences.xml, so the settings UI and the service always agree.
@@ -20,6 +31,10 @@ class SettingsManager(context: Context) {
     val announcementEnabled: Boolean
         get() = prefs.getBoolean(KEY_ANNOUNCEMENT, true)
 
+    /** Whether announcement repeating is enabled. */
+    val repeatAnnouncementEnabled: Boolean
+        get() = prefs.getBoolean(KEY_REPEAT_ANNOUNCEMENT, false)
+
     /** TTS speech rate in percent (50..200; 100 = normal). */
     val speechRatePct: Int
         get() = prefs.getInt(KEY_SPEECH_RATE, 100).coerceIn(50, 200)
@@ -32,11 +47,17 @@ class SettingsManager(context: Context) {
     val voipAnnouncementEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOIP_ANNOUNCEMENT, true)
 
+    /** Spam call announcement policy. */
+    val spamAnnouncementPolicy: SpamAnnouncementPolicy
+        get() = SpamAnnouncementPolicy.fromPref(prefs.getString(KEY_SPAM_POLICY, "block"))
+
     companion object {
         const val KEY_VOICE_COMMANDS = "pref_voice_commands_enabled"
         const val KEY_ANNOUNCEMENT = "pref_announcement_enabled"
+        const val KEY_REPEAT_ANNOUNCEMENT = "pref_repeat_enabled"
         const val KEY_SPEECH_RATE = "pref_speech_rate_pct"
         const val KEY_ANNOUNCEMENT_VOLUME = "pref_announcement_volume_pct"
         const val KEY_VOIP_ANNOUNCEMENT = "pref_voip_announcement_enabled"
+        const val KEY_SPAM_POLICY = "pref_spam_announcement_policy"
     }
 }

@@ -78,32 +78,36 @@ class CallerIdentityManager(private val context: Context) {
     }
 
     /** Called when Truecaller identifies the caller (via Accessibility or Notification). */
-    fun onTruecallerName(name: String) {
+    fun onTruecallerName(name: String, spamStatus: com.callhandler.service.core.SpamStatus = com.callhandler.service.core.SpamStatus.UNKNOWN) {
         val trimmed = name.trim()
         if (trimmed.isEmpty() || trimmed == lastTruecallerName) return
 
         // Reject Truecaller UI placeholder text (not a real caller name)
-        if (isTruecallerUIText(trimmed)) {
+        if (isTruecallerUIText(trimmed) || TruecallerParser.isStaleOrStatusText(trimmed)) {
             Log.d(TAG, "Truecaller name rejected (UI text): '$trimmed'")
             DebugLogStore.log("CALLER_ID", "TRUECALLER NAME REJECTED (UI text): $trimmed")
             return
         }
 
         lastTruecallerName = trimmed
-        Log.d(TAG, "Resolved from Truecaller: $trimmed")
-        DebugLogStore.log("CALLER_ID", "TRUECALLER NAME = $trimmed")
-        CallDebugTracker.onTruecallerResult(currentNumber, trimmed)
+        Log.d(TAG, "Resolved from Truecaller: $trimmed (spam=$spamStatus)")
+        DebugLogStore.log("CALLER_ID", "TRUECALLER NAME = $trimmed (spam=$spamStatus)")
+        CallDebugTracker.onTruecallerResult(currentNumber, trimmed, spamStatus)
 
-        // Rule: If contacts matched first, never replace with Truecaller
+        // Rule: If contacts matched first, never replace with Truecaller, but attach spam metadata
         if (_identity.value?.source == IdentitySource.CONTACT) {
             DebugLogStore.log("CALLER_ID", "TRUECALLER IGNORED (Contact already resolved)")
+            if (spamStatus != com.callhandler.service.core.SpamStatus.UNKNOWN) {
+                val current = _identity.value!!
+                _identity.value = current.copy(spamStatus = spamStatus)
+            }
             return
         }
 
         DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = TRUECALLER")
         DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $trimmed")
         CallDebugTracker.onIdentitySelected(currentNumber, trimmed, "TRUECALLER")
-        publish(CallerIdentity(currentNumber, trimmed, IdentitySource.TRUECALLER))
+        publish(CallerIdentity(currentNumber, trimmed, IdentitySource.TRUECALLER, spamStatus))
     }
 
     /**
@@ -111,7 +115,7 @@ class CallerIdentityManager(private val context: Context) {
      * Truecaller. Returns Unknown if neither source succeeds.
      *
      * @param number  Incoming number from the first RINGING event (may be null).
-     * @param source  "CALL_SCREENING" or "PHONE_STATE" for diagnostics.
+     * @param source  "PHONE_STATE" for diagnostics.
      */
     suspend fun resolveIdentity(number: String?, source: String, waitMs: Long): CallerIdentity = coroutineScope {
         // Register the first event's number before creating the pending result.
@@ -224,13 +228,14 @@ class CallerIdentityManager(private val context: Context) {
         val existingA11yInfo = TruecallerAccessibilityService.instance?.inspectCurrentWindowsForCaller()
         if (existingA11yInfo?.announcementName != null) {
             val tcName = existingA11yInfo.announcementName!!
-            Log.i(TAG, "Truecaller window inspected immediately: '$tcName'")
-            DebugLogStore.log("CALLER_ID", "TRUECALLER OVERLAY INSTANT MATCH = $tcName")
+            val spamStatus = existingA11yInfo.spamStatus
+            Log.i(TAG, "Truecaller window inspected immediately: '$tcName' (spam=$spamStatus)")
+            DebugLogStore.log("CALLER_ID", "TRUECALLER OVERLAY INSTANT MATCH = $tcName (spam=$spamStatus)")
             DebugLogStore.log("CALLER_ID", "SELECTED SOURCE = TRUECALLER")
             DebugLogStore.log("CALLER_ID", "FINAL ANNOUNCEMENT = $tcName")
-            CallDebugTracker.onTruecallerResult(currentNumber, tcName)
+            CallDebugTracker.onTruecallerResult(currentNumber, tcName, spamStatus)
             CallDebugTracker.onIdentitySelected(currentNumber, tcName, "TRUECALLER")
-            val id = CallerIdentity(currentNumber, tcName, IdentitySource.TRUECALLER)
+            val id = CallerIdentity(currentNumber, tcName, IdentitySource.TRUECALLER, spamStatus)
             _identity.value = id
             pendingResolve = null
             return@coroutineScope id
@@ -246,7 +251,7 @@ class CallerIdentityManager(private val context: Context) {
 
         // 4. Register live callback for accessibility events
         TruecallerAccessibilityService.onCallerInfoDetected = { info ->
-            info.announcementName?.let { onTruecallerName(it) }
+            info.announcementName?.let { onTruecallerName(it, info.spamStatus) }
         }
 
         // 5. Poller job: inspects interactive windows every 250ms during wait period
@@ -256,7 +261,7 @@ class CallerIdentityManager(private val context: Context) {
                 delay(250)
                 val info = TruecallerAccessibilityService.instance?.inspectCurrentWindowsForCaller()
                 if (info?.announcementName != null) {
-                    onTruecallerName(info.announcementName!!)
+                    onTruecallerName(info.announcementName!!, info.spamStatus)
                     break
                 }
             }
