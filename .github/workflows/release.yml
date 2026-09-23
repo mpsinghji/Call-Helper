@@ -38,20 +38,41 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Determine Version and Tag
+      - name: Determine and Validate Version and Tag
         id: vars
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          else
-            BASE_VERSION=$(grep -m 1 'versionName' app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/' | tr -d '[:space:]')
-            if [ -z "$BASE_VERSION" ]; then
-              BASE_VERSION="1.0"
+            RAW_TAG="${GITHUB_REF#refs/tags/}"
+            if [[ ! "$RAW_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Git tag '$RAW_TAG' does not match required SemVer format ^v[0-9]+\.[0-9]+\.[0-9]+$"
+              exit 1
             fi
-            TAG="v${BASE_VERSION}.${{ github.run_number }}"
+            VERSION="${RAW_TAG#v}"
+            TAG="$RAW_TAG"
+          else
+            VERSION=$(grep -m 1 'versionName' app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/' | tr -d '[:space:]')
+            TAG="v${VERSION}"
           fi
+
+          # Strict SemVer validation: MUST be exactly MAJOR.MINOR.PATCH
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Calculated version '$VERSION' does not match required SemVer format ^[0-9]+\.[0-9]+\.[0-9]+$ (MAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+
+          # Strict Git tag validation: MUST be exactly vMAJOR.MINOR.PATCH
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Calculated tag '$TAG' does not match required format ^v[0-9]+\.[0-9]+\.[0-9]+$"
+            exit 1
+          fi
+
+          echo "Validated Version: $VERSION"
+          echo "Validated Tag: $TAG"
+          RELEASE_NAME="Release ${TAG}"
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "release_name=Release ${TAG}" >> $GITHUB_OUTPUT
+          echo "release_name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
 
           SRC_APK="app/build/outputs/apk/debug/app-debug.apk"
           DEST_APK="app/build/outputs/apk/debug/CallHelper-${TAG}.apk"
@@ -71,6 +92,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          make_latest: true
           files: |
             ${{ steps.vars.outputs.apk_path }}
         env:
