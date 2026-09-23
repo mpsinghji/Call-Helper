@@ -6,19 +6,18 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -26,16 +25,15 @@ import com.callhandler.service.R
 import com.callhandler.service.voice.VoiceCommand
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 /**
  * Developer debug console for:
- * 1. Truecaller accessibility tree inspection
- * 2. Speech recognizer testing (without a live call)
- * 3. Caller-ID pipeline debugging
- *
- * Accessible from MainActivity's Developer section.
+ * 1. Clean Call History inspection
+ * 2. Detailed Developer technical timeline with filters (ALL, GSM, WHATSAPP, VOIP, BUGS)
+ * 3. Separate Copy buttons for Clean History and Developer Details
+ * 4. Console-Only mode with auto-scroll
+ * 5. Truecaller accessibility tree & Speech recognizer diagnostic tools
  */
 class DebugConsoleActivity : AppCompatActivity() {
 
@@ -44,7 +42,33 @@ class DebugConsoleActivity : AppCompatActivity() {
     private lateinit var statusTruecaller: TextView
     private lateinit var statusObservation: TextView
 
-    // Panels
+    // Console-Only and Main Containers
+    private lateinit var containerConsoleOnlyBar: View
+    private lateinit var containerStandardControls: View
+    private lateinit var containerDeveloperFilters: View
+
+    // Console-Only Controls
+    private lateinit var btnToggleConsoleOnly: Button
+    private lateinit var btnConsoleOnlyCopyDev: Button
+    private lateinit var btnConsoleOnlyExit: Button
+
+    // Section Switcher Buttons
+    private lateinit var btnViewHistory: Button
+    private lateinit var btnViewDeveloper: Button
+
+    // Copy and Clear Buttons
+    private lateinit var btnCopyCallHistory: Button
+    private lateinit var btnCopyDeveloperDetails: Button
+    private lateinit var btnClearLogs: Button
+
+    // Filter Chips
+    private lateinit var chipFilterAll: Button
+    private lateinit var chipFilterGsm: Button
+    private lateinit var chipFilterWhatsapp: Button
+    private lateinit var chipFilterVoip: Button
+    private lateinit var chipFilterBugs: Button
+
+    // Collapsible Diagnostic Panels
     private lateinit var panelAccessibility: View
     private lateinit var panelSpeech: View
     private lateinit var panelCallerId: View
@@ -68,11 +92,14 @@ class DebugConsoleActivity : AppCompatActivity() {
     private lateinit var logScrollView: ScrollView
     private lateinit var callerIdDebugText: TextView
 
+    // State
+    private var isDeveloperDetailsMode = false
+    private var isConsoleOnlyMode = false
+    private var currentDeveloperFilter = DeveloperFilter.ALL
+
     // Speech test
     private var testRecognizer: SpeechRecognizer? = null
     private var isRecognizerRunning = false
-
-    private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +109,32 @@ class DebugConsoleActivity : AppCompatActivity() {
         statusAccessibility = findViewById(R.id.statusAccessibility)
         statusTruecaller = findViewById(R.id.statusTruecaller)
         statusObservation = findViewById(R.id.statusObservation)
+
+        // Bind containers
+        containerConsoleOnlyBar = findViewById(R.id.containerConsoleOnlyBar)
+        containerStandardControls = findViewById(R.id.containerStandardControls)
+        containerDeveloperFilters = findViewById(R.id.containerDeveloperFilters)
+
+        // Bind console-only mode buttons
+        btnToggleConsoleOnly = findViewById(R.id.btnToggleConsoleOnly)
+        btnConsoleOnlyCopyDev = findViewById(R.id.btnConsoleOnlyCopyDev)
+        btnConsoleOnlyExit = findViewById(R.id.btnConsoleOnlyExit)
+
+        // Bind sections
+        btnViewHistory = findViewById(R.id.btnViewHistory)
+        btnViewDeveloper = findViewById(R.id.btnViewDeveloper)
+
+        // Bind copy & clear buttons
+        btnCopyCallHistory = findViewById(R.id.btnCopyCallHistory)
+        btnCopyDeveloperDetails = findViewById(R.id.btnCopyDeveloperDetails)
+        btnClearLogs = findViewById(R.id.btnClearLogs)
+
+        // Bind filter chips
+        chipFilterAll = findViewById(R.id.chipFilterAll)
+        chipFilterGsm = findViewById(R.id.chipFilterGsm)
+        chipFilterWhatsapp = findViewById(R.id.chipFilterWhatsapp)
+        chipFilterVoip = findViewById(R.id.chipFilterVoip)
+        chipFilterBugs = findViewById(R.id.chipFilterBugs)
 
         // Panels
         panelAccessibility = findViewById(R.id.panelAccessibility)
@@ -93,7 +146,18 @@ class DebugConsoleActivity : AppCompatActivity() {
         logScrollView = findViewById(R.id.logScrollView)
         callerIdDebugText = findViewById(R.id.callerIdDebugText)
 
-        // Tab buttons
+        // Caller-ID card views
+        cardResultStatus = findViewById(R.id.cardResultStatus)
+        cardCallSource = findViewById(R.id.cardCallSource)
+        cardDirection = findViewById(R.id.cardDirection)
+        cardPhoneNumber = findViewById(R.id.cardPhoneNumber)
+        cardContactName = findViewById(R.id.cardContactName)
+        cardTruecallerName = findViewById(R.id.cardTruecallerName)
+        cardAnnouncementName = findViewById(R.id.cardAnnouncementName)
+        cardSource = findViewById(R.id.cardSource)
+        cardTtsText = findViewById(R.id.cardTtsText)
+
+        // Tab buttons for tools
         findViewById<Button>(R.id.tabAccessibility).setOnClickListener { showPanel(0) }
         findViewById<Button>(R.id.tabSpeech).setOnClickListener { showPanel(1) }
         findViewById<Button>(R.id.tabCallerIdDebug).setOnClickListener { showPanel(2) }
@@ -115,30 +179,6 @@ class DebugConsoleActivity : AppCompatActivity() {
             TruecallerAccessibilityService.instance?.stopObserving()
             updateStatus()
         }
-        findViewById<Button>(R.id.btnDumpWindow).setOnClickListener {
-            val svc = TruecallerAccessibilityService.instance
-            if (svc != null) {
-                svc.dumpCurrentWindows()
-            } else {
-                DebugLogStore.log("DUMP", "ERROR: Accessibility service not connected. Enable it in Settings.")
-                Toast.makeText(this, "Enable the accessibility service first", Toast.LENGTH_LONG).show()
-            }
-        }
-        findViewById<Button>(R.id.btnCopyLogs).setOnClickListener {
-            val text = DebugLogStore.logs.value.joinToString("\n") { it.formatted() }
-            if (text.isNotBlank()) {
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("Truecaller Debug Logs", text)
-                clipboard.setPrimaryClip(clip)
-                Toast.makeText(this, "Logs copied to clipboard!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "No logs to copy", Toast.LENGTH_SHORT).show()
-            }
-        }
-        findViewById<Button>(R.id.btnClearLogs).setOnClickListener {
-            DebugLogStore.clear()
-            CallDebugTracker.reset()
-        }
 
         btnToggleVerboseA11y = findViewById(R.id.btnToggleVerboseA11y)
         btnToggleVerboseA11y.setOnClickListener {
@@ -146,62 +186,60 @@ class DebugConsoleActivity : AppCompatActivity() {
             updateVerboseA11yButton()
         }
 
-        // Caller-ID card views
-        cardResultStatus = findViewById(R.id.cardResultStatus)
-        cardCallSource = findViewById(R.id.cardCallSource)
-        cardDirection = findViewById(R.id.cardDirection)
-        cardPhoneNumber = findViewById(R.id.cardPhoneNumber)
-        cardContactName = findViewById(R.id.cardContactName)
-        cardTruecallerName = findViewById(R.id.cardTruecallerName)
-        cardAnnouncementName = findViewById(R.id.cardAnnouncementName)
-        cardSource = findViewById(R.id.cardSource)
-        cardTtsText = findViewById(R.id.cardTtsText)
-
-        // History / Developer toggle
-        val btnViewHistory = findViewById<Button>(R.id.btnViewHistory)
-        val btnViewDeveloper = findViewById<Button>(R.id.btnViewDeveloper)
-
+        // Section Switcher Listeners
         btnViewHistory.setOnClickListener {
             isDeveloperDetailsMode = false
-            btnViewHistory.setBackgroundColor(Color.parseColor("#2E7D32"))
-            btnViewDeveloper.setBackgroundColor(Color.TRANSPARENT)
+            updateSectionUi()
             renderLogs()
         }
         btnViewDeveloper.setOnClickListener {
             isDeveloperDetailsMode = true
-            btnViewDeveloper.setBackgroundColor(Color.parseColor("#2E7D32"))
-            btnViewHistory.setBackgroundColor(Color.TRANSPARENT)
+            updateSectionUi()
             renderLogs()
         }
 
-        // Export buttons
-        findViewById<Button>(R.id.btnExportCurrent).setOnClickListener {
-            copyToClipboard(CallDebugTracker.exportCurrentSession(), "Current Session")
+        // Two Copy Buttons Listeners (Requirement 13)
+        btnCopyCallHistory.setOnClickListener {
+            val text = CallDebugTracker.exportCleanCallHistory()
+            copyToClipboard(text, "Call History")
         }
-        findViewById<Button>(R.id.btnExportLast10).setOnClickListener {
-            copyToClipboard(CallDebugTracker.exportLastSessions(10), "Last 10 Sessions")
+        btnCopyDeveloperDetails.setOnClickListener {
+            val text = CallDebugTracker.exportDeveloperDetails()
+            copyToClipboard(text, "Developer Details")
         }
-        findViewById<Button>(R.id.btnExportDebugLog).setOnClickListener {
-            copyToClipboard(CallDebugTracker.exportDebugLog(), "Debug Log")
+        btnConsoleOnlyCopyDev.setOnClickListener {
+            val text = CallDebugTracker.exportDeveloperDetails()
+            copyToClipboard(text, "Developer Details")
         }
 
-        findViewById<Button>(R.id.btnSimulateMatch).setOnClickListener {
-            simulateCall(mismatch = false)
-        }
-        findViewById<Button>(R.id.btnSimulateMismatch).setOnClickListener {
-            simulateCall(mismatch = true)
-        }
-        findViewById<Button>(R.id.btnSimulateWaIncoming).setOnClickListener {
-            simulateWaCall(incoming = true)
-        }
-        findViewById<Button>(R.id.btnSimulateWaOutgoing).setOnClickListener {
-            simulateWaCall(incoming = false)
-        }
-        findViewById<Button>(R.id.btnClearCallerIdLogs).setOnClickListener {
+        // Clear Logs
+        btnClearLogs.setOnClickListener {
             DebugLogStore.clear()
             CallDebugTracker.clearAll()
             renderLogs()
+            Toast.makeText(this, "Logs & Sessions cleared", Toast.LENGTH_SHORT).show()
         }
+
+        // Console-Only Mode Listeners (Requirement 15)
+        btnToggleConsoleOnly.setOnClickListener {
+            setConsoleOnlyMode(true)
+        }
+        btnConsoleOnlyExit.setOnClickListener {
+            setConsoleOnlyMode(false)
+        }
+
+        // Filter Chip Listeners (Requirement 14)
+        chipFilterAll.setOnClickListener { setDeveloperFilter(DeveloperFilter.ALL) }
+        chipFilterGsm.setOnClickListener { setDeveloperFilter(DeveloperFilter.GSM) }
+        chipFilterWhatsapp.setOnClickListener { setDeveloperFilter(DeveloperFilter.WHATSAPP) }
+        chipFilterVoip.setOnClickListener { setDeveloperFilter(DeveloperFilter.VOIP) }
+        chipFilterBugs.setOnClickListener { setDeveloperFilter(DeveloperFilter.BUGS) }
+
+        // Simulators
+        findViewById<Button>(R.id.btnSimulateMatch).setOnClickListener { simulateCall(mismatch = false) }
+        findViewById<Button>(R.id.btnSimulateMismatch).setOnClickListener { simulateCall(mismatch = true) }
+        findViewById<Button>(R.id.btnSimulateWaIncoming).setOnClickListener { simulateWaCall(incoming = true) }
+        findViewById<Button>(R.id.btnSimulateWaOutgoing).setOnClickListener { simulateWaCall(incoming = false) }
 
         // Speech test controls
         findViewById<Button>(R.id.btnStartRecognizer).setOnClickListener { startTestRecognizer() }
@@ -210,10 +248,6 @@ class DebugConsoleActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnTestReject).setOnClickListener { testCommandMatch("reject") }
         findViewById<Button>(R.id.btnTestSilent).setOnClickListener { testCommandMatch("silent") }
         findViewById<Button>(R.id.btnTestSpeaker).setOnClickListener { testCommandMatch("speaker") }
-        findViewById<Button>(R.id.btnClearSpeechLogs).setOnClickListener {
-            DebugLogStore.clear()
-            renderLogs()
-        }
 
         // Observe log store & sessions
         lifecycleScope.launch {
@@ -228,6 +262,13 @@ class DebugConsoleActivity : AppCompatActivity() {
             }
         }
 
+        // Observe active session updates
+        lifecycleScope.launch {
+            CallDebugTracker.activeSession.collect {
+                renderLogs()
+            }
+        }
+
         // Observe CallDebugTracker snapshot
         lifecycleScope.launch {
             CallDebugTracker.currentSnapshot.collect { snapshot ->
@@ -237,24 +278,64 @@ class DebugConsoleActivity : AppCompatActivity() {
 
         updateStatus()
         updateVerboseA11yButton()
+        updateSectionUi()
+        updateFilterChipsUi()
+        renderLogs()
     }
 
-    private var isDeveloperDetailsMode = false
+    private fun setConsoleOnlyMode(enabled: Boolean) {
+        isConsoleOnlyMode = enabled
+        if (enabled) {
+            containerStandardControls.visibility = View.GONE
+            containerConsoleOnlyBar.visibility = View.VISIBLE
+            isDeveloperDetailsMode = true
+        } else {
+            containerStandardControls.visibility = View.VISIBLE
+            containerConsoleOnlyBar.visibility = View.GONE
+        }
+        updateSectionUi()
+        renderLogs()
+    }
+
+    private fun setDeveloperFilter(filter: DeveloperFilter) {
+        currentDeveloperFilter = filter
+        updateFilterChipsUi()
+        renderLogs()
+    }
+
+    private fun updateSectionUi() {
+        if (isDeveloperDetailsMode) {
+            btnViewDeveloper.setBackgroundColor(Color.parseColor("#1565C0"))
+            btnViewDeveloper.setTextColor(Color.WHITE)
+            btnViewHistory.setBackgroundColor(Color.TRANSPARENT)
+            btnViewHistory.setTextColor(Color.parseColor("#90CAF9"))
+            containerDeveloperFilters.visibility = View.VISIBLE
+        } else {
+            btnViewHistory.setBackgroundColor(Color.parseColor("#2E7D32"))
+            btnViewHistory.setTextColor(Color.WHITE)
+            btnViewDeveloper.setBackgroundColor(Color.TRANSPARENT)
+            btnViewDeveloper.setTextColor(Color.parseColor("#A5D6A7"))
+            containerDeveloperFilters.visibility = View.GONE
+        }
+    }
+
+    private fun updateFilterChipsUi() {
+        val activeColor = Color.parseColor("#1565C0")
+        val inactiveColor = Color.TRANSPARENT
+
+        chipFilterAll.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.ALL) activeColor else inactiveColor)
+        chipFilterGsm.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.GSM) activeColor else inactiveColor)
+        chipFilterWhatsapp.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.WHATSAPP) activeColor else inactiveColor)
+        chipFilterVoip.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.VOIP) activeColor else inactiveColor)
+        chipFilterBugs.setBackgroundColor(if (currentDeveloperFilter == DeveloperFilter.BUGS) Color.parseColor("#C62828") else inactiveColor)
+    }
 
     private fun renderLogs() {
         val text = if (isDeveloperDetailsMode) {
-            val sessions = CallDebugTracker.sessionHistory.value
-            val devTimeline = if (sessions.isNotEmpty()) {
-                sessions.joinToString("\n\n") { CallDebugTracker.formatSessionDeveloperDetails(it) } + "\n\n=== RAW LOGS ===\n"
-            } else ""
-            devTimeline + DebugLogStore.logs.value.joinToString("\n") { it.formatted() }
+            CallDebugTracker.getFilteredDeveloperTimeline(currentDeveloperFilter)
         } else {
-            val sessions = CallDebugTracker.sessionHistory.value
-            if (sessions.isNotEmpty()) {
-                sessions.joinToString("\n\n") { CallDebugTracker.formatCleanSessionCard(it) }
-            } else {
-                DebugLogStore.logs.value.joinToString("\n") { it.formatted() }
-            }
+            val history = CallDebugTracker.getCleanCallHistoryText()
+            if (history.isNotBlank()) history else "No calls recorded yet."
         }
 
         logTextView.text = text
@@ -281,26 +362,30 @@ class DebugConsoleActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    // -------------------------------------------------- panel switching
-
     private fun showPanel(index: Int) {
-        panelAccessibility.visibility = if (index == 0) View.VISIBLE else View.GONE
-        panelSpeech.visibility = if (index == 1) View.VISIBLE else View.GONE
-        panelCallerId.visibility = if (index == 2) View.VISIBLE else View.GONE
+        val target = when (index) {
+            0 -> panelAccessibility
+            1 -> panelSpeech
+            2 -> panelCallerId
+            else -> null
+        }
+        val isCurrentlyVisible = target?.visibility == View.VISIBLE
+        panelAccessibility.visibility = View.GONE
+        panelSpeech.visibility = View.GONE
+        panelCallerId.visibility = View.GONE
+
+        if (!isCurrentlyVisible && target != null) {
+            target.visibility = View.VISIBLE
+        }
     }
 
-    // -------------------------------------------------- status updates
-
     private fun updateStatus() {
-        // Accessibility service status
         val serviceConnected = TruecallerAccessibilityService.isServiceConnected
         statusAccessibility.text = "Accessibility Service: ${if (serviceConnected) "✅ ENABLED" else "❌ DISABLED"}"
 
-        // Truecaller installed check
         val truecallerInstalled = isTruecallerInstalled()
         statusTruecaller.text = "Truecaller: ${if (truecallerInstalled) "✅ INSTALLED" else "❌ NOT FOUND"}"
 
-        // Observation status
         val observing = TruecallerAccessibilityService.instance?.observing == true
         statusObservation.text = "Observation: ${if (observing) "🟢 RUNNING" else "⏹ STOPPED"}"
     }
@@ -372,12 +457,10 @@ class DebugConsoleActivity : AppCompatActivity() {
         CallDebugTracker.onTruecallerResult(testNumber, tcName)
 
         if (mismatch) {
-            // Priority violation: Contact is Aman, but announcement selects Truecaller Pavinder Jasrotia
             CallDebugTracker.onIdentitySelected(testNumber, tcName, "TRUECALLER")
             CallDebugTracker.onAnnouncementPrepared(tcName, "Incoming call from $tcName", "TRUECALLER")
             CallDebugTracker.onTtsStarted("Incoming call from $tcName")
         } else {
-            // Priority correct: Contact (Aman) beats Truecaller (Pavinder Jasrotia)
             CallDebugTracker.onIdentitySelected(testNumber, "Aman", "CONTACT")
             CallDebugTracker.onAnnouncementPrepared("Aman", "Incoming call from Aman", "CONTACT")
             CallDebugTracker.onTtsStarted("Incoming call from Aman")
@@ -425,23 +508,18 @@ class DebugConsoleActivity : AppCompatActivity() {
     }
 
     private fun isTruecallerInstalled(): Boolean {
-        // 1. Direct package lookup (works with <queries> declaration on Android 11+)
         val direct = runCatching {
             packageManager.getPackageInfo(TruecallerAccessibilityService.TRUECALLER_PACKAGE, 0)
         }.isSuccess
         if (direct) return true
 
-        // 2. Launch intent check
         val launchIntent = packageManager.getLaunchIntentForPackage(
             TruecallerAccessibilityService.TRUECALLER_PACKAGE
         )
         if (launchIntent != null) return true
 
-        // 3. Fallback: if accessibility service has been connected or received events
         return TruecallerAccessibilityService.isServiceConnected
     }
-
-    // -------------------------------------------------- speech test
 
     private fun startTestRecognizer() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -509,7 +587,6 @@ class DebugConsoleActivity : AppCompatActivity() {
                 }
                 DebugLogStore.log("SPEECH", "ERROR: $name")
 
-                // Auto-restart for benign errors
                 if (isRecognizerRunning && error in listOf(
                         SpeechRecognizer.ERROR_NO_MATCH,
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT
@@ -524,14 +601,12 @@ class DebugConsoleActivity : AppCompatActivity() {
                     ?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 
                 val receiveTime = SystemClock.elapsedRealtime()
-
                 DebugLogStore.log("SPEECH", "FINAL = ${phrases.joinToString(", ") { "\"$it\"" }}")
 
                 if (phrases.isNotEmpty()) {
                     matchAndLog(phrases.first(), receiveTime)
                 }
 
-                // Auto-restart for continuous listening
                 if (isRecognizerRunning) {
                     runCatching { recognizer.startListening(intent) }
                 }
@@ -556,9 +631,6 @@ class DebugConsoleActivity : AppCompatActivity() {
     }
 
     private fun matchAndLog(raw: String, receiveTimeMs: Long) {
-        val normalized = raw.lowercase().replace("[^a-z ]".toRegex(), "").trim()
-        DebugLogStore.log("SPEECH", "NORMALIZED = \"$normalized\"")
-
         val command = VoiceCommand.fromPhrase(raw)
         val matchTime = SystemClock.elapsedRealtime()
         val latency = matchTime - receiveTimeMs
@@ -586,9 +658,5 @@ class DebugConsoleActivity : AppCompatActivity() {
         val start = SystemClock.elapsedRealtime()
         DebugLogStore.log("SPEECH", "TEST INPUT = \"$phrase\"")
         matchAndLog(phrase, start)
-    }
-
-    companion object {
-        private const val TAG = "DebugConsole"
     }
 }

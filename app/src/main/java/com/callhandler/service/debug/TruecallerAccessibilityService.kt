@@ -186,68 +186,6 @@ class TruecallerAccessibilityService : AccessibilityService() {
         return null
     }
 
-    /**
-     * Immediately dump all currently visible accessibility windows to logs.
-     */
-    fun dumpCurrentWindows() {
-        log("DUMP", "=== DUMP CURRENT WINDOWS ===")
-        Log.i(TAG, "Dumping current windows")
-
-        val windowList = try {
-            this.windows
-        } catch (e: Exception) {
-            log("DUMP", "ERROR: Cannot retrieve windows: ${e.message}")
-            Log.e(TAG, "Cannot retrieve windows", e)
-            return
-        }
-
-        if (windowList.isNullOrEmpty()) {
-            log("DUMP", "No windows available")
-            return
-        }
-
-        log("DUMP", "Total windows: ${windowList.size}")
-
-        for ((i, window) in windowList.withIndex()) {
-            val typeName = when (window.type) {
-                AccessibilityWindowInfo.TYPE_APPLICATION -> "APPLICATION"
-                AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "INPUT_METHOD"
-                AccessibilityWindowInfo.TYPE_SYSTEM -> "SYSTEM"
-                AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "ACCESSIBILITY_OVERLAY"
-                else -> "UNKNOWN(${window.type})"
-            }
-
-            val bounds = Rect()
-            window.getBoundsInScreen(bounds)
-
-            log("DUMP", "--- Window[$i] id=${window.id} type=$typeName " +
-                    "layer=${window.layer} focused=${window.isFocused} " +
-                    "active=${window.isActive} bounds=$bounds")
-
-            val root = window.root
-            if (root != null) {
-                val pkg = root.packageName?.toString()
-                log("DUMP", "  rootPackage=$pkg")
-
-                if (pkg == TRUECALLER_PACKAGE) {
-                    log("DUMP", "  *** TRUECALLER WINDOW FOUND — traversing ***")
-                    traverseNode(root, depth = 1)
-                    val parsed = TruecallerParser.parse(root)
-                    if (parsed != null) {
-                        log("DUMP", "  >>> PARSED RESULT: name='${parsed.name}', number='${parsed.phoneNumber}', label='${parsed.label}', spam=${parsed.isSpam}")
-                    }
-                } else {
-                    log("DUMP", "  (skipping non-Truecaller window: $pkg)")
-                }
-                root.recycle()
-            } else {
-                log("DUMP", "  root=null")
-            }
-        }
-
-        log("DUMP", "=== DUMP COMPLETE ===")
-    }
-
     // -------------------------------------------------- node traversal
 
     private fun traverseNode(node: AccessibilityNodeInfo, depth: Int) {

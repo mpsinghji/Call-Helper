@@ -632,4 +632,149 @@ class CallDebugTrackerTest {
         val canAnnounce2 = CallDebugTracker.canStartAnnouncement(repeatEnabled = true)
         assertTrue("Second announcement request must be allowed when repeat is enabled", canAnnounce2)
     }
+
+    // 27. Strictly monotonic session IDs (Call 1 -> #1, Call 2 -> #2, Call 3 -> #3)
+    @Test
+    fun testMonotonicSessionIds_Call1_2_3() {
+        // Call 1
+        CallDebugTracker.onCallDetected("+919419100001", "PHONE_STATE")
+        val id1 = CallDebugTracker.activeSession.value?.id
+        CallDebugTracker.onCallEnded()
+
+        // Call 2
+        CallDebugTracker.onCallDetected("+919816939576", "PHONE_STATE")
+        val id2 = CallDebugTracker.activeSession.value?.id
+        CallDebugTracker.onCallEnded()
+
+        // Call 3
+        CallDebugTracker.onCallDetected("+917018308746", "PHONE_STATE")
+        val id3 = CallDebugTracker.activeSession.value?.id
+        CallDebugTracker.onCallEnded()
+
+        assertEquals(1L, id1)
+        assertEquals(2L, id2)
+        assertEquals(3L, id3)
+
+        val history = CallDebugTracker.sessionHistory.value
+        assertEquals(3, history.size)
+        assertEquals(1L, history[0].sessionId)
+        assertEquals(2L, history[1].sessionId)
+        assertEquals(3L, history[2].sessionId)
+    }
+
+    // 28. Single session for physical call: multiple detector events and identity updates must NOT create second session
+    @Test
+    fun testSingleSessionForPhysicalCall_MultipleDetectorsAndIdentityUpdates() {
+        val number = "+917018308746"
+        val contactName = "Aman"
+        val tcName = "Pavinder Jasrotia"
+
+        // Event 1: PHONE_STATE_LISTENER
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE_LISTENER")
+        assertEquals(1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+
+        // Event 2: PHONE_STATE
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+        assertEquals(1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+
+        // Event 3: onPhoneNumberResolved from CallerIdentityManager
+        CallDebugTracker.onPhoneNumberResolved(number, "INCOMING_NUMBER")
+        assertEquals(1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+
+        // Event 4: Contact lookup
+        CallDebugTracker.onContactLookupResult(number, contactName)
+        assertEquals(1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+
+        // Event 5: Truecaller observation
+        CallDebugTracker.onTruecallerResult(number, tcName)
+        assertEquals(1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+
+        // Event 6: Identity selection
+        CallDebugTracker.onIdentitySelected(number, contactName, "CONTACT")
+        assertEquals(1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+
+        // Event 7: Announcement prepared & TTS started
+        CallDebugTracker.onAnnouncementPrepared(contactName, "Incoming call from $contactName", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from $contactName")
+        assertEquals(1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+
+        // Call ended
+        CallDebugTracker.onCallEnded()
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+        assertEquals(1L, CallDebugTracker.sessionHistory.value[0].sessionId)
+        assertEquals(number, CallDebugTracker.sessionHistory.value[0].number)
+        assertEquals(contactName, CallDebugTracker.sessionHistory.value[0].contactName)
+        assertEquals(tcName, CallDebugTracker.sessionHistory.value[0].truecallerName)
+        assertEquals(contactName, CallDebugTracker.sessionHistory.value[0].announcedName)
+        assertEquals("CONTACT", CallDebugTracker.sessionHistory.value[0].announcementSource)
+    }
+
+    // 29. Developer filter tests
+    @Test
+    fun testDeveloperFilters() {
+        // GSM call
+        CallDebugTracker.onCallDetected("+919805305407", "PHONE_STATE")
+        CallDebugTracker.onCallEnded()
+
+        // WhatsApp call
+        CallDebugTracker.onVoipCallEvent(
+            source = DebugCallSource.WHATSAPP,
+            direction = "INCOMING",
+            callerName = "Aman",
+            number = null,
+            allowed = true,
+            reason = null,
+            ttsText = "WhatsApp call from Aman",
+            packageName = "com.whatsapp"
+        )
+        CallDebugTracker.onCallEnded()
+
+        val allTimeline = CallDebugTracker.getFilteredDeveloperTimeline(DeveloperFilter.ALL)
+        assertTrue(allTimeline.contains("SESSION #1"))
+        assertTrue(allTimeline.contains("SESSION #2"))
+
+        val gsmTimeline = CallDebugTracker.getFilteredDeveloperTimeline(DeveloperFilter.GSM)
+        assertTrue(gsmTimeline.contains("SESSION #1"))
+        assertFalse(gsmTimeline.contains("SESSION #2"))
+
+        val waTimeline = CallDebugTracker.getFilteredDeveloperTimeline(DeveloperFilter.WHATSAPP)
+        assertFalse(waTimeline.contains("SESSION #1"))
+        assertTrue(waTimeline.contains("SESSION #2"))
+    }
+
+    // 30. Separate exports for Call History and Developer Details
+    @Test
+    fun testSeparateExports_CleanHistoryVsDeveloperDetails() {
+        val number = "+917018308746"
+        val name = "Aman"
+
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult(number, name)
+        CallDebugTracker.onIdentitySelected(number, name, "CONTACT")
+        CallDebugTracker.onAnnouncementPrepared(name, "Incoming call from $name", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from $name")
+        CallDebugTracker.onCallEnded()
+
+        val cleanHistory = CallDebugTracker.exportCleanCallHistory()
+        val devDetails = CallDebugTracker.exportDeveloperDetails()
+
+        // Clean history should look like a clean card, not technical timeline
+        assertTrue(cleanHistory.contains("GSM CALL"))
+        assertTrue(cleanHistory.contains("Phone     : Aman"))
+        assertFalse(cleanHistory.contains("=== SESSION #1 TECHNICAL TIMELINE ==="))
+        assertFalse(cleanHistory.contains("EVENTS:"))
+
+        // Developer details must contain full technical timeline
+        assertTrue(devDetails.contains("=== SESSION #1 TECHNICAL TIMELINE ==="))
+        assertTrue(devDetails.contains("EVENTS:"))
+        assertTrue(devDetails.contains("GSM CALL DETECTED"))
+    }
 }
+

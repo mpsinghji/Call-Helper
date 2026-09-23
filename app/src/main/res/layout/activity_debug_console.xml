@@ -1,453 +1,146 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="?android:attr/colorBackground">
 
-    <!-- Status section -->
+    <!-- 1. Console-Only Header Bar (Requirement 15: Developer Console, Copy Developer Details, Exit/Expand) -->
     <LinearLayout
+        android:id="@+id/containerConsoleOnlyBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="12dp">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/debug_console_title"
-            android:textAppearance="?attr/textAppearanceTitleLarge"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <!-- Status indicators -->
-        <TextView
-            android:id="@+id/statusAccessibility"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:fontFamily="monospace"
-            android:text="Accessibility Service: CHECKING..." />
-
-        <TextView
-            android:id="@+id/statusTruecaller"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:fontFamily="monospace"
-            android:text="Truecaller: CHECKING..." />
-
-        <TextView
-            android:id="@+id/statusObservation"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:fontFamily="monospace"
-            android:text="Observation: STOPPED" />
-
-    </LinearLayout>
-
-    <!-- Tab-like section selector -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:scrollbars="none">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp">
-
-            <Button
-                android:id="@+id/tabAccessibility"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:text="🔍 Accessibility"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/tabSpeech"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:text="🎤 Speech Test"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/tabCallerIdDebug"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="📞 Caller ID"
-                android:textSize="12sp" />
-
-        </LinearLayout>
-    </HorizontalScrollView>
-
-    <!-- Accessibility controls panel -->
-    <LinearLayout
-        android:id="@+id/panelAccessibility"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:padding="8dp"
-        android:visibility="visible">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnOpenA11ySettings"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="⚙ A11y Settings"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnStartObserving"
-                style="?attr/materialButtonStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="▶ Start"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnStopObserving"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="⏹ Stop"
-                android:textSize="11sp" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="4dp">
-
-            <Button
-                android:id="@+id/btnDumpWindow"
-                style="?attr/materialButtonStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1.2"
-                android:layout_marginEnd="4dp"
-                android:text="📸 Dump Window"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnCopyLogs"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="📋 Copy Logs"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnClearLogs"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="0.8"
-                android:text="🗑 Clear"
-                android:textSize="11sp" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="4dp">
-
-            <Button
-                android:id="@+id/btnToggleVerboseA11y"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Verbose Tree: OFF (Clean Debug)"
-                android:textSize="11sp" />
-
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- Speech test controls panel -->
-    <LinearLayout
-        android:id="@+id/panelSpeech"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="8dp"
+        android:background="#1E293B"
         android:visibility="gone">
 
-        <LinearLayout
-            android:layout_width="match_parent"
+        <TextView
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnStartRecognizer"
-                style="?attr/materialButtonStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="▶ Start Recognizer"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnStopRecognizer"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="⏹ Stop Recognizer"
-                android:textSize="11sp" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="4dp">
-
-            <Button
-                android:id="@+id/btnTestAnswer"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="Test Answer"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnTestReject"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="Test Reject"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnTestSilent"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="Test Silent"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnTestSpeaker"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Test Speaker"
-                android:textSize="11sp" />
-
-        </LinearLayout>
+            android:layout_weight="1"
+            android:text="@string/console_only_title"
+            android:textColor="#F8FAFC"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textStyle="bold" />
 
         <Button
-            android:id="@+id/btnClearSpeechLogs"
+            android:id="@+id/btnConsoleOnlyCopyDev"
+            style="?attr/materialButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="6dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="@string/btn_copy_developer_details"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/btnConsoleOnlyExit"
             style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="🗑 Clear Logs"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="@string/console_mode_exit"
             android:textSize="11sp" />
 
     </LinearLayout>
 
-    <!-- Caller-ID debug panel -->
+    <!-- 2. Standard Controls Container (Hidden in Console-Only mode) -->
     <LinearLayout
-        android:id="@+id/panelCallerId"
+        android:id="@+id/containerStandardControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="8dp"
-        android:visibility="gone">
+        android:orientation="vertical">
 
-        <!-- Active Call Card -->
+        <!-- Top Header Bar with Console-Only Toggle -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:id="@+id/txtDebugConsoleTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/debug_console_title"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnToggleConsoleOnly"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:text="@string/console_mode_expand"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+        <!-- Status Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp">
+            android:layout_marginStart="10dp"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="4dp"
+            app:cardElevation="1dp"
+            app:cardCornerRadius="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="10dp">
+                android:padding="8dp">
 
                 <TextView
-                    android:id="@+id/cardResultStatus"
+                    android:id="@+id/statusAccessibility"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="STATUS         : IDLE"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
                     android:fontFamily="monospace"
-                    android:textStyle="bold"
-                    android:textSize="11sp"
-                    android:layout_marginBottom="4dp" />
+                    android:text="Accessibility Service: CHECKING..." />
 
                 <TextView
-                    android:id="@+id/cardCallSource"
+                    android:id="@+id/statusTruecaller"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
                     android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="Call Source    : -" />
+                    android:text="Truecaller: CHECKING..." />
 
                 <TextView
-                    android:id="@+id/cardDirection"
+                    android:id="@+id/statusObservation"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
                     android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="Direction      : -" />
-
-                <TextView
-                    android:id="@+id/cardPhoneNumber"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="Number         : None" />
-
-                <TextView
-                    android:id="@+id/cardContactName"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="Phone/Contacts : -" />
-
-                <TextView
-                    android:id="@+id/cardTruecallerName"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="Truecaller     : -" />
-
-                <TextView
-                    android:id="@+id/cardAnnouncementName"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="Announcement   : -" />
-
-                <TextView
-                    android:id="@+id/cardSource"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="Source         : -" />
-
-                <TextView
-                    android:id="@+id/cardTtsText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="11sp"
-                    android:text="TTS Text       : -" />
+                    android:text="Observation: STOPPED" />
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Simulation Buttons -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnSimulateMatch"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="🧪 Test Match"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnSimulateMismatch"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="⚠ Test Mismatch"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnClearCallerIdLogs"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="0.8"
-                android:text="🗑 Clear"
-                android:textSize="11sp" />
-
-        </LinearLayout>
-
+        <!-- Main Section Switcher (Requirement 14: CALL HISTORY vs DEVELOPER DETAILS) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="4dp">
-
-            <Button
-                android:id="@+id/btnSimulateWaIncoming"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="🧪 WhatsApp In"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/btnSimulateWaOutgoing"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="🚫 WhatsApp Out"
-                android:textSize="11sp" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="4dp">
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="4dp">
 
             <Button
                 android:id="@+id/btnViewHistory"
@@ -455,9 +148,10 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="4dp"
+                android:layout_marginEnd="6dp"
                 android:text="@string/btn_view_history"
-                android:textSize="11sp" />
+                android:textStyle="bold"
+                android:textSize="12sp" />
 
             <Button
                 android:id="@+id/btnViewDeveloper"
@@ -466,44 +160,457 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/btn_view_developer"
-                android:textSize="11sp" />
+                android:textStyle="bold"
+                android:textSize="12sp" />
 
         </LinearLayout>
 
+        <!-- Action / Copy Buttons Row (Requirement 13: Separate Copy Call History & Copy Developer Details) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="4dp">
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:layout_marginBottom="4dp">
 
             <Button
-                android:id="@+id/btnExportCurrent"
+                android:id="@+id/btnCopyCallHistory"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="2dp"
-                android:text="Export Current"
-                android:textSize="10sp" />
+                android:layout_height="38dp"
+                android:layout_weight="1.2"
+                android:layout_marginEnd="4dp"
+                android:text="@string/btn_copy_call_history"
+                android:textSize="11sp" />
 
             <Button
-                android:id="@+id/btnExportLast10"
+                android:id="@+id/btnCopyDeveloperDetails"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="2dp"
-                android:text="Export Last 10"
-                android:textSize="10sp" />
+                android:layout_height="38dp"
+                android:layout_weight="1.2"
+                android:layout_marginEnd="4dp"
+                android:text="@string/btn_copy_developer_details"
+                android:textSize="11sp" />
 
             <Button
-                android:id="@+id/btnExportDebugLog"
+                android:id="@+id/btnClearLogs"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="0.8"
+                android:text="🗑 Clear"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+        <!-- Developer Filters Row (Requirement 14: ALL, GSM, WHATSAPP, VOIP, BUGS) -->
+        <HorizontalScrollView
+            android:id="@+id/containerDeveloperFilters"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:layout_marginBottom="4dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Export Log"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Filters: "
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginEnd="4dp" />
+
+                <Button
+                    android:id="@+id/chipFilterAll"
+                    style="?attr/materialButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/filter_all"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/chipFilterGsm"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/filter_gsm"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/chipFilterWhatsapp"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/filter_whatsapp"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/chipFilterVoip"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/filter_voip"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/chipFilterBugs"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="@string/filter_bugs"
+                    android:textSize="10sp" />
+
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Secondary Diagnostic Tools Tabs (Accessibility / Speech / Caller-ID Test) -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:layout_marginBottom="2dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/tabAccessibility"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="⚙ A11y Tools"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/tabSpeech"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:text="🎤 Speech Test"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/tabCallerIdDebug"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="📞 Call Simulators"
+                    android:textSize="10sp" />
+
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Panel 1: Accessibility Controls (Dump Window completely removed!) -->
+        <LinearLayout
+            android:id="@+id/panelAccessibility"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnOpenA11ySettings"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="⚙ A11y Settings"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnStartObserving"
+                    style="?attr/materialButtonStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="▶ Start"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnStopObserving"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:text="⏹ Stop"
+                    android:textSize="10sp" />
+
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnToggleVerboseA11y"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginTop="2dp"
+                android:text="Verbose Tree: OFF (Clean Debug)"
                 android:textSize="10sp" />
+
+        </LinearLayout>
+
+        <!-- Panel 2: Speech Test Controls -->
+        <LinearLayout
+            android:id="@+id/panelSpeech"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnStartRecognizer"
+                    style="?attr/materialButtonStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="34dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="▶ Start Recognizer"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnStopRecognizer"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="34dp"
+                    android:layout_weight="1"
+                    android:text="⏹ Stop Recognizer"
+                    android:textSize="10sp" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="2dp">
+
+                <Button
+                    android:id="@+id/btnTestAnswer"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="2dp"
+                    android:text="Answer"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnTestReject"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="2dp"
+                    android:text="Reject"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnTestSilent"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="2dp"
+                    android:text="Silent"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnTestSpeaker"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:text="Speaker"
+                    android:textSize="10sp" />
+
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Panel 3: Caller-ID Simulators & Live Card -->
+        <LinearLayout
+            android:id="@+id/panelCallerId"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <!-- Active Call Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="4dp"
+                app:cardElevation="1dp"
+                app:cardCornerRadius="8dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="8dp">
+
+                    <TextView
+                        android:id="@+id/cardResultStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="STATUS         : IDLE"
+                        android:fontFamily="monospace"
+                        android:textStyle="bold"
+                        android:textSize="10sp"
+                        android:layout_marginBottom="2dp" />
+
+                    <TextView
+                        android:id="@+id/cardCallSource"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="Call Source    : -" />
+
+                    <TextView
+                        android:id="@+id/cardDirection"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="Direction      : -" />
+
+                    <TextView
+                        android:id="@+id/cardPhoneNumber"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="Number         : None" />
+
+                    <TextView
+                        android:id="@+id/cardContactName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="Phone/Contacts : -" />
+
+                    <TextView
+                        android:id="@+id/cardTruecallerName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="Truecaller     : -" />
+
+                    <TextView
+                        android:id="@+id/cardAnnouncementName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="Announcement   : -" />
+
+                    <TextView
+                        android:id="@+id/cardSource"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="Source         : -" />
+
+                    <TextView
+                        android:id="@+id/cardTtsText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="10sp"
+                        android:text="TTS Text       : -" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Simulation Buttons -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnSimulateMatch"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="3dp"
+                    android:text="🧪 Match"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnSimulateMismatch"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="3dp"
+                    android:text="⚠ Mismatch"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnSimulateWaIncoming"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="3dp"
+                    android:text="🧪 WA In"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnSimulateWaOutgoing"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:text="🚫 WA Out"
+                    android:textSize="10sp" />
+
+            </LinearLayout>
 
         </LinearLayout>
 
@@ -515,14 +622,14 @@
 
     </LinearLayout>
 
-    <!-- Log display -->
+    <!-- 3. Console Log Display (Scrolls automatically to newest event) -->
     <ScrollView
         android:id="@+id/logScrollView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#1A1A2E"
-        android:padding="8dp"
+        android:background="#0F172A"
+        android:padding="10dp"
         android:fillViewport="true">
 
         <TextView
@@ -530,8 +637,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:textSize="10sp"
-            android:textColor="#E0E0E0"
+            android:textSize="11sp"
+            android:textColor="#E2E8F0"
+            android:lineSpacingExtra="2dp"
             android:text=""
             android:scrollbars="vertical" />
 

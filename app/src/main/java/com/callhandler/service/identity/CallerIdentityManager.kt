@@ -78,7 +78,7 @@ class CallerIdentityManager(private val context: Context) {
         currentNumber = number
         Log.d(TAG, "Incoming number source=$source, starting lookup")
         DebugLogStore.log("CALLER_ID", "CALL = RINGING (number=$number, source=$source)")
-        CallDebugTracker.onCallDetected(number, source)
+        CallDebugTracker.onPhoneNumberResolved(number, source)
 
         val name = runCatching { lookupContactBlocking(number) }.getOrNull()
         CallDebugTracker.onContactLookupResult(number, name)
@@ -140,7 +140,7 @@ class CallerIdentityManager(private val context: Context) {
         if (number != null) {
             Log.d(TAG, "Incoming number source=$source, starting lookup")
             DebugLogStore.log("CALLER_ID", "CALL = RINGING (number=$number, source=$source)")
-            CallDebugTracker.onCallDetected(number, source)
+            CallDebugTracker.onPhoneNumberResolved(number, source)
         }
 
         val deferred = CompletableDeferred<CallerIdentity>()
@@ -211,7 +211,7 @@ class CallerIdentityManager(private val context: Context) {
                 Log.d(TAG, "Call log fallback: got number $callLogNumber")
                 DebugLogStore.log("CALLER_ID", "CALL_LOG_FALLBACK = $callLogNumber")
                 DebugLogStore.log("CALLER_ID", "CALL = RINGING (number=$callLogNumber, source=CALL_LOG)")
-                CallDebugTracker.onCallDetected(callLogNumber, "CALL_LOG")
+                CallDebugTracker.onPhoneNumberResolved(callLogNumber, "CALL_LOG")
                 val contactName = lookupContact(callLogNumber)
                 CallDebugTracker.onContactLookupResult(callLogNumber, contactName)
                 if (contactName != null) {

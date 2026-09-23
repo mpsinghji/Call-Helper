@@ -39,6 +39,17 @@ enum class DebugCallSource(val displayName: String) {
 }
 
 /**
+ * Filter categories for developer log view.
+ */
+enum class DeveloperFilter(val label: String) {
+    ALL("ALL"),
+    GSM("GSM"),
+    WHATSAPP("WHATSAPP"),
+    VOIP("VOIP"),
+    BUGS("BUGS")
+}
+
+/**
  * Single granular event within a call debug session.
  */
 data class SessionEvent(
@@ -97,10 +108,10 @@ data class CallDebugSession(
             CallSessionState.BLOCKED -> "⚠ BLOCKED"
             CallSessionState.ANNOUNCED -> if (detectedBugs.isEmpty()) "✓ ANNOUNCED" else "⚠ ANNOUNCED (BUGS DETECTED)"
             CallSessionState.ACTIVE -> "✓ ACTIVE"
-            CallSessionState.ENDED -> if (ttsCount > 0) "✓ ANNOUNCED" else "MISSED / DISMISSED"
+            CallSessionState.ENDED -> if (ttsCount > 0) "✓ ANNOUNCED" else "MISSED"
             else -> state.name
         }
-        val timeStr = SimpleDateFormat("HH:mm", Locale.US).format(Date(startTimeMs))
+        val timeStr = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(startTimeMs))
         return CallHistoryEntry(
             sessionId = id,
             startTimeMs = startTimeMs,
@@ -126,15 +137,18 @@ data class CallDebugSession(
 /**
  * Central tracker for caller identity pipeline and VoIP debugging.
  *
- * Implements persistent session-based call tracking, automatic bug detection,
- * clean immutable history cards, developer technical event logs, and diagnostic exports.
+ * Enforces:
+ * 1. ONE REAL GSM CALL = ONE UNIQUE SESSION (strictly monotonic IDs #1, #2, #3...).
+ * 2. Immutable history snapshots (CallHistoryEntry).
+ * 3. Authoritative call deduplication across PHONE_STATE and PHONE_STATE_LISTENER.
+ * 4. Distinct Clean Call History vs Filtered Developer Details.
  */
 object CallDebugTracker {
 
     private const val DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-    private val summaryTimeFmt = SimpleDateFormat("HH:mm", Locale.US)
-    private val sessionIdGenerator = AtomicLong(100L)
+    private val summaryTimeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
+    private val sessionIdGenerator = AtomicLong(0L)
 
     data class CallDebugSnapshot(
         val sessionId: Long,
@@ -211,13 +225,17 @@ object CallDebugTracker {
 
     private fun now(): String = timeFmt.format(Date())
 
+    /**
+     * Authoritative session retrieval/creation for incoming GSM calls.
+     * Ensures exactly ONE session exists per real physical call.
+     */
     @Synchronized
     fun getOrCreateGsmSession(number: String?): CallDebugSession {
         val current = _activeSession.value
         if (current != null) {
             val isSameSource = current.callSource == DebugCallSource.GSM
             val isNotEnded = current.state != CallSessionState.ENDED && !current.isSealed
-            val isWithinTimeout = (System.currentTimeMillis() - current.startTimeMs) <= 45_000L || current.state == CallSessionState.ACTIVE
+            val isWithinTimeout = (System.currentTimeMillis() - current.startTimeMs) <= 60_000L || current.state == CallSessionState.ACTIVE
 
             val isSameNumber = when {
                 number.isNullOrBlank() || current.phoneNumber.isNullOrBlank() -> true
@@ -367,7 +385,7 @@ object CallDebugTracker {
     }
 
     /**
-     * Called when a call is detected (PHONE_STATE, etc.).
+     * Authoritative call detection entry point for a real physical GSM call.
      */
     @Synchronized
     fun onCallDetected(number: String?, source: String) {
@@ -380,15 +398,33 @@ object CallDebugTracker {
     }
 
     /**
+     * Called when phone number is resolved or updated by a secondary detector
+     * (e.g. PhoneStateListener or CallLog) after the initial ringing detection.
+     * Updates the existing active session without spawning a new one.
+     */
+    @Synchronized
+    fun onPhoneNumberResolved(number: String, source: String) {
+        val session = _activeSession.value ?: return
+        if (session.state == CallSessionState.ENDED || session.isSealed) return
+
+        if (session.phoneNumber.isNullOrBlank()) {
+            session.phoneNumber = number
+            session.addEvent("NUMBER RESOLVED", "number=$number, source=$source")
+            updateSnapshot()
+            DebugLogStore.log("DIAG", "[Session #${session.id}] PHONE NUMBER RESOLVED: $number ($source)")
+        } else {
+            session.addEvent("DETECTOR UPDATE", "number=$number, source=$source")
+        }
+    }
+
+    /**
      * Called when Contacts lookup for the number completes.
+     * Only updates the active session. Never creates a session.
      */
     @Synchronized
     fun onContactLookupResult(number: String?, name: String?) {
-        val session = _activeSession.value
-        if (session == null || session.state == CallSessionState.ENDED || session.isSealed) {
-            DebugLogStore.log("DIAG", "CONTACT RESULT (no active GSM call): ${name ?: "Not found"} (number=${number ?: "Unknown"})")
-            return
-        }
+        val session = _activeSession.value ?: return
+        if (session.state == CallSessionState.ENDED || session.isSealed) return
 
         if (!number.isNullOrBlank() && !session.phoneNumber.isNullOrBlank()) {
             val n1 = CallBugDetector.normalizePhoneNumber(session.phoneNumber)
@@ -412,8 +448,7 @@ object CallDebugTracker {
 
     /**
      * Called when Truecaller overlay is parsed or received.
-     *
-     * Rule: Truecaller accessibility updates must NEVER create a call session by themselves.
+     * Rule: Truecaller accessibility updates must NEVER create a call session.
      * They only update the currently relevant active GSM call session when one exists.
      */
     @Synchronized
@@ -476,8 +511,8 @@ object CallDebugTracker {
      */
     @Synchronized
     fun onTruecallerStaleText(staleText: String) {
-        val active = _activeSession.value
-        if (active == null || active.state == CallSessionState.ENDED || active.isSealed) return
+        val active = _activeSession.value ?: return
+        if (active.state == CallSessionState.ENDED || active.isSealed) return
         val bug = CallBugDetector.createStaleTextBug(staleText)
         active.addBug(bug)
         active.addEvent("TRUECALLER STALE/STATUS TEXT", "Value: $staleText (Ignored)")
@@ -487,10 +522,11 @@ object CallDebugTracker {
 
     /**
      * Called when CallerIdentityManager selects the identity to announce.
+     * Only updates the active session. Never creates a session.
      */
     @Synchronized
     fun onIdentitySelected(number: String?, selectedName: String?, source: String) {
-        val session = _activeSession.value ?: getOrCreateGsmSession(number)
+        val session = _activeSession.value ?: return
         if (session.state == CallSessionState.ENDED || session.isSealed) return
 
         if (number != null && session.phoneNumber == null) {
@@ -521,10 +557,11 @@ object CallDebugTracker {
 
     /**
      * Called immediately before sending text to AnnouncementManager.
+     * Only updates the active session. Never creates a session.
      */
     @Synchronized
     fun onAnnouncementPrepared(name: String, text: String, source: String) {
-        val session = _activeSession.value ?: getOrCreateGsmSession(null)
+        val session = _activeSession.value ?: return
         if (session.state == CallSessionState.ENDED || session.isSealed) return
         session.announcedName = name
         session.ttsText = text
@@ -535,10 +572,11 @@ object CallDebugTracker {
 
     /**
      * Called when TTS audio actually starts speaking.
+     * Only updates the active session. Never creates a session.
      */
     @Synchronized
     fun onTtsStarted(text: String, isRecognizerActive: Boolean = false) {
-        val session = _activeSession.value ?: getOrCreateGsmSession(null)
+        val session = _activeSession.value ?: return
         if (session.state == CallSessionState.ENDED || session.isSealed) return
         session.announcementStarted = true
         session.ttsCount++
@@ -631,7 +669,7 @@ object CallDebugTracker {
      */
     @Synchronized
     fun onAnnouncementBlocked(reason: String) {
-        val session = _activeSession.value ?: getOrCreateGsmSession(null)
+        val session = _activeSession.value ?: return
         if (session.state == CallSessionState.ENDED || session.isSealed) return
         session.state = CallSessionState.BLOCKED
         session.blockReason = reason
@@ -712,6 +750,7 @@ object CallDebugTracker {
         _activeSession.value = null
         _sessionHistory.value = emptyList()
         _currentSnapshot.value = null
+        sessionIdGenerator.set(0L)
     }
 
     // ------------------------------------------------ formatting & exports
@@ -731,35 +770,29 @@ object CallDebugTracker {
         sb.appendLine("Number    : ${entry.number ?: "Unknown"}")
         sb.appendLine("")
         if (entry.callSource == DebugCallSource.GSM) {
-            sb.appendLine("Phone     : ${entry.contactName ?: "Unknown"}")
-            sb.appendLine("Truecaller: ${entry.truecallerName ?: "Unknown"}")
+            sb.appendLine("Phone     : ${entry.contactName ?: "—"}")
+            sb.appendLine("Truecaller: ${entry.truecallerName ?: "—"}")
         } else {
-            sb.appendLine("Contact   : ${entry.contactName ?: "Unknown"}")
-            sb.appendLine("Truecaller: ${entry.truecallerName ?: "Unknown"}")
+            sb.appendLine("Contact   : ${entry.contactName ?: "—"}")
+            sb.appendLine("Truecaller: ${entry.truecallerName ?: "—"}")
         }
         sb.appendLine("")
-        sb.appendLine("Announced : ${entry.announcedName ?: "Unknown"}")
-
-        if (entry.status.startsWith("⚠ BLOCKED") || entry.blockReason != null) {
-            sb.appendLine("Status    : ⚠ BLOCKED")
-            if (entry.blockReason != null) {
-                sb.appendLine("")
-                sb.appendLine("Reason    : ${entry.blockReason}")
-            }
-        } else {
-            sb.appendLine("Source    : ${entry.announcementSource ?: "-"}")
-            sb.appendLine("")
-            sb.appendLine("TTS       : ${entry.ttsText ?: "-"}")
-            sb.appendLine("Status    : ${entry.status}")
-        }
+        sb.appendLine("Announced : ${entry.announcedName ?: "—"}")
+        sb.appendLine("Source    : ${entry.announcementSource ?: "—"}")
+        sb.appendLine("")
+        sb.appendLine("Status    : ${entry.status}")
         sb.appendLine("Spam      : ${entry.spamStatus}")
+        sb.appendLine("")
+        sb.appendLine("TTS       : ${entry.ttsText ?: "—"}")
+        sb.appendLine("")
 
         if (entry.bugs.isNotEmpty()) {
-            sb.appendLine("")
             sb.appendLine("⚠ BUGS DETECTED (${entry.bugs.size}):")
             for (bug in entry.bugs) {
                 sb.appendLine("  • $bug")
             }
+        } else {
+            sb.appendLine("✓ Clean")
         }
 
         sb.appendLine(DIVIDER)
@@ -775,7 +808,7 @@ object CallDebugTracker {
     fun formatSessionDeveloperDetails(entry: CallHistoryEntry): String {
         val sb = StringBuilder()
         sb.appendLine("=== SESSION #${entry.sessionId} TECHNICAL TIMELINE ===")
-        sb.appendLine("Source: ${entry.callSource.displayName} | Direction: ${entry.direction} | Status: ${entry.status}")
+        sb.appendLine("Time: ${entry.formattedTime} | Source: ${entry.callSource.displayName} | Direction: ${entry.direction} | Status: ${entry.status}")
         sb.appendLine("Number: ${entry.number ?: "None"} | Contact: ${entry.contactName ?: "None"} | Truecaller: ${entry.truecallerName ?: "None"}")
         sb.appendLine("--------------------------------------------------")
         sb.appendLine("EVENTS:")
@@ -797,6 +830,58 @@ object CallDebugTracker {
 
     fun formatSessionDeveloperDetails(session: CallDebugSession): String =
         formatSessionDeveloperDetails(session.toImmutableHistoryEntry())
+
+    /**
+     * Returns full clean Call History as text.
+     */
+    fun getCleanCallHistoryText(): String {
+        val sessions = _sessionHistory.value
+        if (sessions.isEmpty()) return "No call history recorded."
+        return sessions.joinToString("\n\n") { formatCleanSessionCard(it) }
+    }
+
+    /**
+     * Returns filtered Developer Details timeline text.
+     */
+    fun getFilteredDeveloperTimeline(filter: DeveloperFilter = DeveloperFilter.ALL): String {
+        val sessions = _sessionHistory.value
+        val active = _activeSession.value
+        val allSessions = if (active != null && sessions.none { it.sessionId == active.id }) {
+            sessions + active.toImmutableHistoryEntry()
+        } else {
+            sessions
+        }
+
+        val filteredSessions = when (filter) {
+            DeveloperFilter.ALL -> allSessions
+            DeveloperFilter.GSM -> allSessions.filter { it.callSource == DebugCallSource.GSM }
+            DeveloperFilter.WHATSAPP -> allSessions.filter { it.callSource == DebugCallSource.WHATSAPP }
+            DeveloperFilter.VOIP -> allSessions.filter { it.callSource != DebugCallSource.GSM }
+            DeveloperFilter.BUGS -> allSessions.filter { it.bugs.isNotEmpty() }
+        }
+
+        val devTimeline = if (filteredSessions.isNotEmpty()) {
+            filteredSessions.joinToString("\n\n") { formatSessionDeveloperDetails(it) }
+        } else {
+            "(no sessions matching filter: ${filter.name})"
+        }
+
+        val rawLogs = DebugLogStore.logs.value.filter { log ->
+            when (filter) {
+                DeveloperFilter.ALL -> true
+                DeveloperFilter.GSM -> log.tag != "VOIP" && log.tag != "WHATSAPP"
+                DeveloperFilter.WHATSAPP -> log.tag == "WHATSAPP" || log.message.contains("WhatsApp", ignoreCase = true)
+                DeveloperFilter.VOIP -> log.tag == "VOIP" || log.tag == "WHATSAPP"
+                DeveloperFilter.BUGS -> log.message.contains("BUG", ignoreCase = true) || log.message.contains("MISMATCH", ignoreCase = true)
+            }
+        }
+
+        val rawPart = if (rawLogs.isNotEmpty()) {
+            "\n\n=== RAW LOGS (${filter.name}) ===\n" + rawLogs.joinToString("\n") { it.formatted() }
+        } else ""
+
+        return devTimeline + rawPart
+    }
 
     /**
      * Export Current Session report.
@@ -843,19 +928,12 @@ object CallDebugTracker {
     }
 
     /**
-     * Export Debug Log.
+     * Export Clean Call History only (Requirement 13).
      */
-    fun exportDebugLog(): String {
-        val rawLogs = DebugLogStore.logs.value.joinToString("\n") { it.formatted() }
-        val sessions = exportLastSessions(10)
-        return buildString {
-            appendLine("=== CALL HANDLER COMPLETE DIAGNOSTIC LOG ===")
-            appendLine("Generated: ${now()}")
-            appendLine()
-            appendLine(sessions)
-            appendLine()
-            appendLine("=== RAW DEBUG LOG STORE ===")
-            appendLine(rawLogs)
-        }
-    }
+    fun exportCleanCallHistory(): String = getCleanCallHistoryText()
+
+    /**
+     * Export complete technical debugging information (Requirement 13).
+     */
+    fun exportDeveloperDetails(): String = getFilteredDeveloperTimeline(DeveloperFilter.ALL)
 }

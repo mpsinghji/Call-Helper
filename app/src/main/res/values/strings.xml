@@ -102,6 +102,16 @@
     <string name="btn_export_debug_log">Export Debug Log</string>
     <string name="btn_view_history">📋 Call History</string>
     <string name="btn_view_developer">🔬 Developer Details</string>
+    <string name="btn_copy_call_history">📋 Copy Call History</string>
+    <string name="btn_copy_developer_details">🔬 Copy Developer Details</string>
+    <string name="filter_all">ALL</string>
+    <string name="filter_gsm">GSM</string>
+    <string name="filter_whatsapp">WHATSAPP</string>
+    <string name="filter_voip">VOIP</string>
+    <string name="filter_bugs">BUGS</string>
+    <string name="console_only_title">Developer Console</string>
+    <string name="console_mode_expand">⛶ Expand</string>
+    <string name="console_mode_exit">✕ Normal</string>
 
     <!-- About Section -->
     <string name="about_section_title">About Call Handler</string>

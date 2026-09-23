@@ -348,7 +348,6 @@ class CallHandlerService : Service() {
     private fun onCallAnswered() {
         if (!stateMachine.transitionTo(CallState.ANSWERED)) return
         CallDebugTracker.recordActiveCallState()
-        CallDebugTracker.onCallEnded()
 
         // Hold VOICE_CALL volume through Android's SCO re-initialization.
         // Android recreates the BT HFP link for the real call at a variable,
@@ -616,9 +615,12 @@ class CallHandlerService : Service() {
             return
         }
         val listener = object : PhoneStateListener() {
+            private var initialCallbackIgnored = false
+
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
                 when (state) {
                     TelephonyManager.CALL_STATE_RINGING -> {
+                        initialCallbackIgnored = true
                         if (!phoneNumber.isNullOrBlank()) {
                             Log.d(TAG, "PhoneStateListener: RINGING with number (length=${phoneNumber.length})")
                             DebugLogStore.log("CALLER_ID", "PHONE_STATE_LISTENER = number received")
@@ -628,12 +630,18 @@ class CallHandlerService : Service() {
                         }
                     }
                     TelephonyManager.CALL_STATE_OFFHOOK -> {
+                        initialCallbackIgnored = true
                         Log.d(TAG, "PhoneStateListener: OFFHOOK")
                         CallDebugTracker.recordActiveCallState()
                     }
                     TelephonyManager.CALL_STATE_IDLE -> {
+                        if (!initialCallbackIgnored) {
+                            Log.d(TAG, "PhoneStateListener: Ignoring initial IDLE callback upon registration")
+                            initialCallbackIgnored = true
+                            return
+                        }
                         Log.d(TAG, "PhoneStateListener: IDLE")
-                        CallDebugTracker.onCallEnded()
+                        onCallEnded()
                     }
                 }
             }
