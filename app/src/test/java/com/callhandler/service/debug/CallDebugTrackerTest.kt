@@ -121,7 +121,7 @@ class CallDebugTrackerTest {
         assertEquals("Unknown caller", CallDebugTracker.announcementName)
         val active = CallDebugTracker.activeSession.value
         assertNotNull(active)
-        assertTrue(active!!.detectedBugs.any { it.type == BugType.LATE_TRUECALLER_UPDATE })
+        assertTrue(active!!.detectedBugs.any { it.type == BugType.POST_ANNOUNCEMENT_MUTATION })
     }
 
     // 5. "Call ended less than 1m ago" rejected as a caller name
@@ -775,6 +775,163 @@ class CallDebugTrackerTest {
         assertTrue(devDetails.contains("=== SESSION #1 TECHNICAL TIMELINE ==="))
         assertTrue(devDetails.contains("EVENTS:"))
         assertTrue(devDetails.contains("GSM CALL DETECTED"))
+    }
+
+    // 31. Test Scenario A — Number arrives immediately: ONE SESSION, Mummy Ji
+    @Test
+    fun testScenarioA_numberArrivesImmediately() {
+        val number = "+919816939576"
+        val contact = "Mummy Ji"
+
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult(number, contact)
+        CallDebugTracker.onIdentitySelected(number, contact, "CONTACT")
+        CallDebugTracker.onAnnouncementPrepared(contact, "Incoming call from $contact", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from $contact")
+        CallDebugTracker.onCallEnded()
+
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+        val history = CallDebugTracker.sessionHistory.value[0]
+        assertEquals(1L, history.sessionId)
+        assertEquals(number, history.number)
+        assertEquals(contact, history.contactName)
+        assertEquals("CONTACT", history.announcementSource)
+        assertEquals(contact, history.announcedName)
+    }
+
+    // 32. Test Scenario B — PHONE_STATE initially has no number, later PHONE_STATE_LISTENER has number + CONTACT
+    @Test
+    fun testScenarioB_phoneStateInitiallyNoNumber_thenListenerWithNumber() {
+        val number = "+919816939576"
+        val contact = "Mummy Ji"
+
+        // Event 1: PHONE_STATE arrives first without number
+        CallDebugTracker.onCallDetected(null, "PHONE_STATE")
+        val session = CallDebugTracker.activeSession.value
+        assertNotNull(session)
+        assertEquals(1L, session?.id)
+        assertNull(session?.phoneNumber)
+
+        // Event 2: PHONE_STATE_LISTENER arrives 100ms later with number
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE_LISTENER")
+        assertEquals("Must be the same session #1", 1L, CallDebugTracker.activeSession.value?.id)
+        assertEquals("Phone number must be merged into session #1", number, CallDebugTracker.activeSession.value?.phoneNumber)
+        assertEquals("Must only be 1 session in history", 1, CallDebugTracker.sessionHistory.value.size)
+
+        // Contact lookup resolves
+        CallDebugTracker.onContactLookupResult(number, contact)
+        CallDebugTracker.onIdentitySelected(number, contact, "CONTACT")
+        assertEquals(contact, CallDebugTracker.activeSession.value?.announcedName)
+        assertEquals("CONTACT", CallDebugTracker.activeSession.value?.announcementSource)
+
+        CallDebugTracker.onCallEnded()
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+        assertEquals(number, CallDebugTracker.sessionHistory.value[0].number)
+        assertEquals(contact, CallDebugTracker.sessionHistory.value[0].contactName)
+    }
+
+    // 33. Test Scenario C — Listener arrives first with number + CONTACT, later PHONE_STATE has number = null (12:56 TEST)
+    @Test
+    fun testScenarioC_listenerArrivesFirst_thenPhoneStateNoNumber_noDowngrade() {
+        val number = "+919816939576"
+        val contact = "Mummy Ji"
+
+        // Event 1: PHONE_STATE_LISTENER receives number first
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE_LISTENER")
+        val session1 = CallDebugTracker.activeSession.value
+        assertNotNull(session1)
+        assertEquals(1L, session1?.id)
+        assertEquals(number, session1?.phoneNumber)
+
+        // Contact lookup completes
+        CallDebugTracker.onContactLookupResult(number, contact)
+        CallDebugTracker.onIdentitySelected(number, contact, "CONTACT")
+        assertEquals(contact, session1?.contactName)
+        assertEquals("CONTACT", session1?.announcementSource)
+        assertEquals(contact, session1?.announcedName)
+
+        // Event 2: PHONE_STATE arrives 185ms later with number = null (Android broadcast)
+        CallDebugTracker.onCallDetected(null, "PHONE_STATE")
+
+        // CRITICAL CHECK: Still Session #1! No Session #2!
+        val sessionAfter = CallDebugTracker.activeSession.value
+        assertEquals("Must remain the SAME session #1", session1?.id, sessionAfter?.id)
+        assertEquals("Must NOT create a second session in history", 1, CallDebugTracker.sessionHistory.value.size)
+        assertEquals("Phone number must NOT be overwritten with null", number, sessionAfter?.phoneNumber)
+
+        // Attempted downgrade by a later UNKNOWN identity selection must be rejected!
+        CallDebugTracker.onIdentitySelected(null, "Unknown caller", "UNKNOWN")
+        assertEquals("CONTACT must remain sticky and NOT be downgraded by UNKNOWN", contact, sessionAfter?.announcedName)
+        assertEquals("Source must remain CONTACT", "CONTACT", sessionAfter?.announcementSource)
+
+        // TTS starts for Mummy Ji
+        CallDebugTracker.onAnnouncementPrepared(contact, "Incoming call from $contact", "CONTACT")
+        CallDebugTracker.onTtsStarted("Incoming call from $contact")
+
+        CallDebugTracker.onCallEnded()
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+        val finalHistory = CallDebugTracker.sessionHistory.value[0]
+        assertEquals(contact, finalHistory.announcedName)
+        assertEquals("CONTACT", finalHistory.announcementSource)
+        assertEquals(number, finalHistory.number)
+    }
+
+    // 34. Test Scenario D — Truecaller later: Contact = Mummy Ji, later Truecaller = Mummy Ji -> source remains CONTACT
+    @Test
+    fun testScenarioD_truecallerLater_sourceRemainsContact() {
+        val number = "+919816939576"
+        val contact = "Mummy Ji"
+        val tc = "Mummy Ji"
+
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult(number, contact)
+        CallDebugTracker.onIdentitySelected(number, contact, "CONTACT")
+
+        // Later Truecaller arrives
+        CallDebugTracker.onTruecallerResult(number, tc)
+        CallDebugTracker.onIdentitySelected(number, tc, "TRUECALLER")
+
+        val active = CallDebugTracker.activeSession.value
+        assertEquals("Source must remain CONTACT", "CONTACT", active?.announcementSource)
+        assertEquals("Announced name must remain Mummy Ji", contact, active?.announcedName)
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+    }
+
+    // 35. Test Scenario E — No identity: no number, no contact, no Truecaller -> Unknown caller
+    @Test
+    fun testScenarioE_noIdentity_unknownCallerOnly() {
+        // No number from any source
+        CallDebugTracker.onCallDetected(null, "PHONE_STATE")
+        CallDebugTracker.onIdentitySelected(null, "Unknown caller", "UNKNOWN")
+        CallDebugTracker.onAnnouncementPrepared("Unknown caller", "Incoming call from Unknown caller", "UNKNOWN")
+        CallDebugTracker.onTtsStarted("Incoming call from Unknown caller")
+        CallDebugTracker.onCallEnded()
+
+        assertEquals(1, CallDebugTracker.sessionHistory.value.size)
+        val history = CallDebugTracker.sessionHistory.value[0]
+        assertEquals(1L, history.sessionId)
+        assertNull(history.number)
+        assertNull(history.contactName)
+        assertNull(history.truecallerName)
+        assertEquals("Unknown caller", history.announcedName)
+        assertEquals("UNKNOWN", history.announcementSource)
+    }
+
+    // 36. Bug detector: IDENTITY_DOWNGRADE is flagged when UNKNOWN tries to overwrite CONTACT
+    @Test
+    fun testIdentityDowngradePreventedAndLogged() {
+        val number = "+919816939576"
+        CallDebugTracker.onCallDetected(number, "PHONE_STATE")
+        CallDebugTracker.onContactLookupResult(number, "Mummy Ji")
+        CallDebugTracker.onIdentitySelected(number, "Mummy Ji", "CONTACT")
+
+        // Attempt downgrade to UNKNOWN
+        CallDebugTracker.onIdentitySelected(null, "Unknown caller", "UNKNOWN")
+
+        val active = CallDebugTracker.activeSession.value
+        assertEquals("Mummy Ji", active?.announcedName)
+        assertEquals("CONTACT", active?.announcementSource)
+        assertTrue(active?.detectedBugs?.any { it.type == BugType.IDENTITY_DOWNGRADE } == true)
     }
 }
 

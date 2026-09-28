@@ -108,10 +108,19 @@ class TruecallerAccessibilityService : AccessibilityService() {
         log("CALLER_ID", "TRUECALLER OVERLAY MATCH -> $announcement")
         Log.i(TAG, "Parsed Truecaller info: $announcement")
 
-        // Notify active CallDebugTracker timeline
+        // Notify active CallDebugTracker timeline (always — for diagnostic/Developer Details)
         CallDebugTracker.onTruecallerResult(info.phoneNumber, announcement, info.spamStatus)
 
-        // Notify active listener or service
+        // CRITICAL: If there is no active GSM call, this observation is DIAGNOSTIC ONLY.
+        // Do NOT forward to CallHandlerService or invoke the callback — that would
+        // contaminate CallerIdentityManager's state for the next GSM call.
+        if (!CallDebugTracker.hasActiveGsmCall()) {
+            Log.d(TAG, "No active GSM call — Truecaller observation is diagnostic only: '$announcement' (number=${info.phoneNumber})")
+            log("CALLER_ID", "TRUECALLER DIAGNOSTIC ONLY (no active GSM call): $announcement (number=${info.phoneNumber ?: "Unknown"})")
+            return
+        }
+
+        // Notify active listener or service (only when an active GSM call exists)
         onCallerInfoDetected?.invoke(info)
 
         // Forward to CallHandlerService if running
@@ -251,6 +260,7 @@ class TruecallerAccessibilityService : AccessibilityService() {
         fun resetDeduplication() {
             lastParsedAnnouncement = null
             lastParsedTimestamp = 0L
+            _lastParsedCallerInfo.value = null
         }
 
         @Volatile

@@ -223,6 +223,20 @@ object CallDebugTracker {
             return s != null && s != CallSessionState.ENDED && s != CallSessionState.BLOCKED
         }
 
+    /**
+     * Returns true if there is currently an active GSM call session
+     * (not ended, not sealed, and specifically a GSM call source).
+     * Used by CallerIdentityManager and TruecallerAccessibilityService
+     * to gate Truecaller observations: if no active GSM call, observations
+     * are diagnostic-only and must NOT modify identity state.
+     */
+    fun hasActiveGsmCall(): Boolean {
+        val session = _activeSession.value ?: return false
+        return session.callSource == DebugCallSource.GSM &&
+               session.state != CallSessionState.ENDED &&
+               !session.isSealed
+    }
+
     private fun now(): String = timeFmt.format(Date())
 
     /**
@@ -249,9 +263,22 @@ object CallDebugTracker {
             if (isSameSource && isNotEnded && isWithinTimeout && isSameNumber) {
                 if (!number.isNullOrBlank() && current.phoneNumber.isNullOrBlank()) {
                     current.phoneNumber = number
+                    current.addEvent("NUMBER RESOLVED", "number=$number, source=DETECTOR")
                     updateSnapshot()
+                    DebugLogStore.log("DIAG", "[Session #${current.id}] PHONE NUMBER RESOLVED: $number (DETECTOR)")
                 }
                 return current
+            }
+
+            // Flag duplicate GSM session bug if an active/recent GSM call was replaced unexpectedly
+            val dupBug = CallBugDetector.checkDuplicateGsmSession(
+                existingSession = current,
+                newSource = "GSM_DETECTOR",
+                newNumber = number
+            )
+            if (dupBug != null) {
+                current.addBug(dupBug)
+                DebugLogStore.log("CALLER_ID", dupBug.format())
             }
 
             // Different call or ended call - finalize and seal previous session
@@ -389,12 +416,31 @@ object CallDebugTracker {
      */
     @Synchronized
     fun onCallDetected(number: String?, source: String) {
-        val session = getOrCreateGsmSession(number)
-        session.addEvent("CALL DETECTED", "number=${number ?: "Unknown"}, source=$source")
-        session.state = CallSessionState.IDENTIFYING
-        updateSnapshot()
+        val active = _activeSession.value
+        val isDuplicateDetector = active != null && active.callSource == DebugCallSource.GSM &&
+                active.state != CallSessionState.ENDED && !active.isSealed &&
+                ((System.currentTimeMillis() - active.startTimeMs) <= 60_000L || active.state == CallSessionState.ACTIVE) &&
+                (number.isNullOrBlank() || active.phoneNumber.isNullOrBlank() ||
+                        CallBugDetector.normalizePhoneNumber(active.phoneNumber) == CallBugDetector.normalizePhoneNumber(number) ||
+                        CallBugDetector.normalizePhoneNumber(active.phoneNumber).endsWith(CallBugDetector.normalizePhoneNumber(number)) ||
+                        CallBugDetector.normalizePhoneNumber(number).endsWith(CallBugDetector.normalizePhoneNumber(active.phoneNumber)))
 
-        DebugLogStore.log("DIAG", "[Session #${session.id}] GSM CALL DETECTED ($source)")
+        val session = getOrCreateGsmSession(number)
+
+        if (isDuplicateDetector) {
+            session.addEvent("DUPLICATE $source EVENT", "number=${number ?: "none"}")
+            DebugLogStore.log("DIAG", "[Session #${session.id}] DUPLICATE $source EVENT")
+            if (!session.contactName.isNullOrBlank()) {
+                val retainedName = session.announcedName.takeIf { !it.isNullOrBlank() } ?: session.contactName
+                val retainedSource = session.announcementSource.takeIf { !it.isNullOrBlank() } ?: "CONTACT"
+                DebugLogStore.log("DIAG", "[Session #${session.id}] IDENTITY RETAINED: $retainedSource / $retainedName")
+            }
+        } else {
+            session.addEvent("CALL DETECTED", "number=${number ?: "Unknown"}, source=$source")
+            session.state = CallSessionState.IDENTIFYING
+            DebugLogStore.log("DIAG", "[Session #${session.id}] GSM CALL DETECTED ($source)")
+        }
+        updateSnapshot()
     }
 
     /**
@@ -438,12 +484,18 @@ object CallDebugTracker {
         if (session.phoneNumber == null && number != null) {
             session.phoneNumber = number
         }
-        session.contactName = name
-        session.identityUpdateCount++
-        session.addEvent("CONTACT LOOKUP", "name='${name ?: "Unknown"}'")
-        updateSnapshot()
 
-        DebugLogStore.log("DIAG", "[Session #${session.id}] CONTACT RESULT: ${name ?: "Not found"}")
+        if (name != null) {
+            session.contactName = name
+            session.identityUpdateCount++
+            session.addEvent("CONTACT LOOKUP", "name='$name'")
+            updateSnapshot()
+            DebugLogStore.log("DIAG", "[Session #${session.id}] CONTACT RESULT: $name")
+        } else {
+            session.addEvent("CONTACT LOOKUP", "name=null (not found)")
+            updateSnapshot()
+            DebugLogStore.log("DIAG", "[Session #${session.id}] CONTACT RESULT: NOT FOUND")
+        }
     }
 
     /**
@@ -487,10 +539,15 @@ object CallDebugTracker {
                 tcName = trimmed
             )
             if (lateBug != null) {
+                // This is an actual mutation attempt — Truecaller name differs from locked announcement
                 active.addBug(lateBug)
-                active.addEvent("POST-ANNOUNCEMENT TRUECALLER UPDATE", "Observed: $trimmed (Identity locked at '${active.announcedName}')")
-                DebugLogStore.log("CALLER_ID", "✓ ANNOUNCEMENT IDENTITY LOCKED\nPOST-ANNOUNCEMENT TRUECALLER UPDATE: $trimmed")
+                active.addEvent("POST-ANNOUNCEMENT IDENTITY MUTATION", "Attempted: $trimmed (Identity locked at '${active.announcedName}')")
+                DebugLogStore.log("CALLER_ID", "✖ POST-ANNOUNCEMENT IDENTITY MUTATION: '$trimmed' attempted to replace locked '${active.announcedName}'")
                 updateSnapshot()
+            } else {
+                // Harmless post-lock observation (same name) — not a bug, just diagnostic
+                active.addEvent("POST-LOCK OBSERVATION", "Truecaller repeated: $trimmed (matches locked identity, no mutation)")
+                DebugLogStore.log("CALLER_ID", "✓ POST-LOCK TRUECALLER OBSERVATION: $trimmed (matches locked identity, no action)")
             }
             return
         }
@@ -528,6 +585,20 @@ object CallDebugTracker {
     fun onIdentitySelected(number: String?, selectedName: String?, source: String) {
         val session = _activeSession.value ?: return
         if (session.state == CallSessionState.ENDED || session.isSealed) return
+
+        // Prevent identity downgrade: CONTACT > TRUECALLER > LOCAL_FALLBACK > UNKNOWN
+        val downgradeBug = CallBugDetector.checkIdentityDowngrade(
+            currentSource = session.announcementSource,
+            currentName = session.announcedName,
+            newSource = source,
+            newName = selectedName
+        )
+        if (downgradeBug != null) {
+            session.addBug(downgradeBug)
+            session.addEvent("DOWNGRADE PREVENTED", "Attempted: $source ($selectedName), Retained: ${session.announcementSource} (${session.announcedName})")
+            DebugLogStore.log("CALLER_ID", "[Session #${session.id}] IDENTITY DOWNGRADE PREVENTED: Retained ${session.announcementSource} (${session.announcedName}) over $source ($selectedName)")
+            return
+        }
 
         if (number != null && session.phoneNumber == null) {
             session.phoneNumber = number

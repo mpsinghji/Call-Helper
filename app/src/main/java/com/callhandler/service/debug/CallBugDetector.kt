@@ -1,5 +1,6 @@
 package com.callhandler.service.debug
 
+import com.callhandler.service.core.CallSessionState
 import com.callhandler.service.core.SpamStatus
 import com.callhandler.service.settings.SpamAnnouncementPolicy
 
@@ -8,9 +9,17 @@ import com.callhandler.service.settings.SpamAnnouncementPolicy
  */
 enum class BugType(val displayName: String) {
     IDENTITY_PRIORITY_VIOLATION("IDENTITY PRIORITY VIOLATION"),
+    IDENTITY_DOWNGRADE("IDENTITY DOWNGRADE"),
+    DUPLICATE_GSM_SESSION("DUPLICATE GSM SESSION FOR SAME CALL"),
     LATE_TRUECALLER_UPDATE("POST-ANNOUNCEMENT TRUECALLER UPDATE"),
+    POST_ANNOUNCEMENT_MUTATION("POST-ANNOUNCEMENT IDENTITY MUTATION"),
     TRUECALLER_STALE_TEXT("TRUECALLER STALE/STATUS TEXT"),
     TRUECALLER_NUMBER_MISMATCH("TRUECALLER NUMBER MISMATCH"),
+    STALE_TRUECALLER_IDENTITY("STALE TRUECALLER IDENTITY USED"),
+    CONTACT_IDENTITY_REPLACED("CONTACT IDENTITY REPLACED BY TRUECALLER"),
+    ANNOUNCEMENT_IDENTITY_MISMATCH("ANNOUNCEMENT/IDENTITY MISMATCH"),
+    HISTORY_ENTRY_MUTATION("COMPLETED HISTORY ENTRY MUTATED"),
+    PREVIOUS_SESSION_LEAK("PREVIOUS SESSION IDENTITY LEAK"),
     DUPLICATE_TTS("DUPLICATE TTS"),
     AUDIO_PIPELINE_CONFLICT("AUDIO PIPELINE CONFLICT"),
     VOIP_DIRECTION_VIOLATION("VOIP DIRECTION VIOLATION"),
@@ -104,7 +113,78 @@ object CallBugDetector {
     }
 
     /**
+     * Checks if a new session creation is actually an illegal duplicate GSM session for the same call.
+     */
+    fun checkDuplicateGsmSession(
+        existingSession: CallDebugSession,
+        newSource: String,
+        newNumber: String?,
+        timestamp: Long = System.currentTimeMillis()
+    ): CallBug? {
+        if (existingSession.callSource != DebugCallSource.GSM) return null
+        if (existingSession.state == CallSessionState.ENDED || existingSession.isSealed) return null
+
+        val timeDiff = timestamp - existingSession.startTimeMs
+        if (timeDiff > 45_000L && existingSession.state != CallSessionState.ACTIVE) return null
+
+        val n1 = normalizePhoneNumber(existingSession.phoneNumber)
+        val n2 = normalizePhoneNumber(newNumber)
+        val numbersCompatible = n1.isEmpty() || n2.isEmpty() || n1 == n2 || n1.endsWith(n2) || n2.endsWith(n1)
+
+        if (numbersCompatible) {
+            return CallBug(
+                type = BugType.DUPLICATE_GSM_SESSION,
+                title = "DUPLICATE GSM SESSION FOR SAME CALL",
+                details = "Active Session #${existingSession.id} (${existingSession.phoneNumber ?: "Unknown"}) detected ${timeDiff}ms ago.\n" +
+                        "A duplicate event was received from $newSource (number=${newNumber ?: "Unknown"}).\n" +
+                        "Action: Must merge into Session #${existingSession.id} instead of creating a new session.",
+                sessionId = existingSession.id
+            )
+        }
+        return null
+    }
+
+    /**
+     * Evaluates whether an incoming identity selection would illegally downgrade an existing stronger identity.
+     * Priority: CONTACT > TRUECALLER > LOCAL_FALLBACK > UNKNOWN
+     */
+    fun checkIdentityDowngrade(
+        currentSource: String?,
+        currentName: String?,
+        newSource: String,
+        newName: String?
+    ): CallBug? {
+        if (currentSource.isNullOrBlank() || currentSource.equals("UNKNOWN", ignoreCase = true)) {
+            return null
+        }
+
+        fun priority(src: String?): Int = when (src?.uppercase()) {
+            "CONTACT" -> 4
+            "TRUECALLER" -> 3
+            "LOCAL_FALLBACK" -> 2
+            else -> 1
+        }
+
+        val currPri = priority(currentSource)
+        val newPri = priority(newSource)
+
+        if (newPri < currPri) {
+            return CallBug(
+                type = BugType.IDENTITY_DOWNGRADE,
+                title = "IDENTITY DOWNGRADE",
+                details = "Attempted downgrade from $currentSource ($currentName) to $newSource ($newName).\n" +
+                        "Priority rule violated: CONTACT > TRUECALLER > LOCAL_FALLBACK > UNKNOWN."
+            )
+        }
+        return null
+    }
+
+    /**
      * Detects when Truecaller arrives after announcement identity was already locked / TTS started.
+     *
+     * Only flags a bug when the Truecaller name actually DIFFERS from the locked announcement
+     * (a POST-ANNOUNCEMENT IDENTITY MUTATION). A harmless post-announcement Truecaller observation
+     * where the name matches (or is just diagnostic) is NOT a bug.
      */
     fun checkLateTruecaller(
         isIdentityLocked: Boolean,
@@ -112,11 +192,38 @@ object CallBugDetector {
         tcName: String
     ): CallBug? {
         if (!isIdentityLocked) return null
-        return CallBug(
-            type = BugType.LATE_TRUECALLER_UPDATE,
-            title = "POST-ANNOUNCEMENT TRUECALLER UPDATE",
-            details = "Announcement identity was locked at: '$lockedAnnouncement'.\nLate Truecaller observation: '$tcName'.\nAnnouncement preserved."
-        )
+        // Only flag if the Truecaller name would actually CHANGE the locked identity
+        val isMutation = !tcName.equals(lockedAnnouncement, ignoreCase = true)
+        if (isMutation) {
+            return CallBug(
+                type = BugType.POST_ANNOUNCEMENT_MUTATION,
+                title = "POST-ANNOUNCEMENT IDENTITY MUTATION",
+                details = "Announcement identity was locked at: '$lockedAnnouncement'.\nLate Truecaller observation: '$tcName'.\nThis would have CHANGED the announced identity.\nAnnouncement preserved."
+            )
+        }
+        // Harmless observation (same name) — not a bug
+        return null
+    }
+
+    /**
+     * Detects when the announcement identity differs from the validated session identity.
+     * This is a critical bug: the TTS would speak a different name than what was resolved.
+     */
+    fun checkAnnouncementMismatch(
+        validatedName: String?,
+        validatedSource: String?,
+        announcementName: String?,
+        announcementSource: String?
+    ): CallBug? {
+        if (validatedName.isNullOrBlank() || announcementName.isNullOrBlank()) return null
+        if (!validatedName.equals(announcementName, ignoreCase = true)) {
+            return CallBug(
+                type = BugType.ANNOUNCEMENT_IDENTITY_MISMATCH,
+                title = "ANNOUNCEMENT/IDENTITY MISMATCH",
+                details = "Validated identity: $validatedSource / $validatedName\nAnnouncement identity: $announcementSource / $announcementName\nThese must always match."
+            )
+        }
+        return null
     }
 
     /**

@@ -108,11 +108,19 @@ class CallNotificationListener : NotificationListenerService() {
 
         val callerName = extractTruecallerName(title, text) ?: return
 
+        // Try to extract a phone number from the notification text for cross-call validation
+        val phoneNumber = extractPhoneNumberFromText(title) ?: extractPhoneNumberFromText(text)
+
         runCatching {
             startService(
                 Intent(this, CallHandlerService::class.java)
                     .setAction(CallHandlerService.ACTION_TRUECALLER_UPDATE)
                     .putExtra(CallHandlerService.EXTRA_CALLER_NAME, callerName)
+                    .apply {
+                        if (phoneNumber != null) {
+                            putExtra(CallHandlerService.EXTRA_CALLER_NUMBER, phoneNumber)
+                        }
+                    }
             )
         }
     }
@@ -139,6 +147,20 @@ class CallNotificationListener : NotificationListenerService() {
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
         return "title='$title', text='$text', category=${sbn.notification.category}"
+    }
+
+    /**
+     * Extracts a phone number from text (e.g., "+91 98169 39576" or "070183 08746").
+     * Returns the raw matched text if it looks like a phone number, null otherwise.
+     */
+    private fun extractPhoneNumberFromText(text: String): String? {
+        if (text.isBlank()) return null
+        // Match sequences of digits, spaces, dashes, parens that form a phone number (7+ digits)
+        val phoneRegex = Regex("""[+]?[\d\s\-()]{7,25}""")
+        val match = phoneRegex.find(text) ?: return null
+        val candidate = match.value.trim()
+        val digitsOnly = candidate.replace(Regex("[^0-9]"), "")
+        return if (digitsOnly.length >= 7) candidate else null
     }
 
     companion object {

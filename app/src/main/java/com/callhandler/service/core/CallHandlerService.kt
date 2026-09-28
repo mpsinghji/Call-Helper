@@ -124,10 +124,11 @@ class CallHandlerService : Service() {
 
             ACTION_TRUECALLER_UPDATE -> {
                 val name = intent.getStringExtra(EXTRA_CALLER_NAME)
+                val tcNumber = intent.getStringExtra(EXTRA_CALLER_NUMBER)
                 val spamStatusStr = intent.getStringExtra(EXTRA_SPAM_STATUS)
                 val spamStatus = spamStatusStr?.let { runCatching { SpamStatus.valueOf(it) }.getOrNull() } ?: SpamStatus.UNKNOWN
-                Log.d(TAG, "ACTION_TRUECALLER_UPDATE: name=$name, spam=$spamStatus")
-                if (name != null) identityManager.onTruecallerName(name, spamStatus)
+                Log.d(TAG, "ACTION_TRUECALLER_UPDATE: name=$name, number=$tcNumber, spam=$spamStatus")
+                if (name != null) identityManager.onTruecallerName(name, spamStatus, tcNumber)
             }
         }
         return START_NOT_STICKY
@@ -138,14 +139,17 @@ class CallHandlerService : Service() {
     // ---------------------------------------------------------------- ringing
 
     private fun onRinging(number: String?, source: String) {
+        Log.d(TAG, "onRinging: source=$source, numberPresent=${!number.isNullOrBlank()}")
         CallDebugTracker.onCallDetected(number, source)
-        if (stateMachine.isRinging) {
-            // Duplicate RINGING event — forward the number if available.
-            if (number != null) {
-                scope.launch(Dispatchers.IO) {
-                    identityManager.onIncomingNumber(number, source)
-                }
+
+        if (!number.isNullOrBlank()) {
+            scope.launch(Dispatchers.IO) {
+                identityManager.onIncomingNumber(number, source)
             }
+        }
+
+        if (stateMachine.isRinging) {
+            Log.d(TAG, "Already in RINGING state. Duplicate event from $source merged.")
             return
         }
         if (!stateMachine.transitionTo(CallState.RINGING)) return
@@ -194,6 +198,11 @@ class CallHandlerService : Service() {
                 source = source,
                 waitMs = TRUECALLER_WAIT_MS
             )
+
+            // Lock the identity immediately after resolution to prevent
+            // stale Truecaller observations from mutating the announced source.
+            identityManager.lockAnnouncementIdentity()
+
             Log.i(
                 TAG,
                 "Identity selected: source=${currentIdentity.source}, " +
@@ -375,9 +384,11 @@ class CallHandlerService : Service() {
     }
 
     private fun onCallEnded() {
+        Log.d(TAG, "onCallEnded: state=${stateMachine.current}")
+        CallDebugTracker.onCallEnded()
+        identityManager.reset()
         if (stateMachine.current == CallState.IDLE) return
         stateMachine.transitionTo(CallState.ENDED)
-        CallDebugTracker.onCallEnded()
         audioRouter.stopCallVolumeHold()
         stopSession()
         stopSelfSafely()
@@ -624,10 +635,10 @@ class CallHandlerService : Service() {
                         if (!phoneNumber.isNullOrBlank()) {
                             Log.d(TAG, "PhoneStateListener: RINGING with number (length=${phoneNumber.length})")
                             DebugLogStore.log("CALLER_ID", "PHONE_STATE_LISTENER = number received")
-                            scope.launch(Dispatchers.IO) {
-                                identityManager.onIncomingNumber(phoneNumber, "PHONE_STATE_LISTENER")
-                            }
+                        } else {
+                            Log.d(TAG, "PhoneStateListener: RINGING without number")
                         }
+                        onRinging(phoneNumber, "PHONE_STATE_LISTENER")
                     }
                     TelephonyManager.CALL_STATE_OFFHOOK -> {
                         initialCallbackIgnored = true
