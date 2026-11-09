@@ -118,4 +118,17 @@
     <string name="about_app_version">Version %1$s (Build %2$d)</string>
     <string name="about_app_description">An intelligent hands-free incoming-call assistant for Android. Announces cellular and VoIP calls via Bluetooth, provides offline voice commands, and extracts real-time Caller-ID from contacts and Truecaller with automated false-positive filtering.</string>
     <string name="about_privacy_note">Built for privacy and safety. All call state analysis, contacts matching, and voice processing execute 100% locally on-device.</string>
+
+    <!-- In-App Auto-Update -->
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_latest">You’re on the latest version (v%1$s)</string>
+    <string name="update_available">Update %1$s available</string>
+    <string name="update_downloading">Downloading update %1$s… %2$d%%</string>
+    <string name="update_downloaded">Update %1$s downloaded</string>
+    <string name="update_btn_install">Install</string>
+    <string name="update_error">Unable to check for updates</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="tools_section_update_title">App Updates</string>
+    <string name="tools_section_update_desc">Check GitHub Releases for the latest version and updates.</string>
+    <string name="btn_check_updates">Check for updates now</string>
 </resources>

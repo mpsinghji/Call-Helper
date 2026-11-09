@@ -38,6 +38,10 @@
         tools:targetApi="34" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- In-app auto-update from GitHub Releases -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Package visibility: required on Android 11+ (API 30+) to detect Truecaller -->
     <queries>
         <package android:name="com.truecaller" />
@@ -121,6 +125,17 @@
             android:name=".debug.DebugConsoleActivity"
             android:exported="false"
             android:label="@string/debug_console_title" />
+
+        <!-- FileProvider for installing downloaded APK updates -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>

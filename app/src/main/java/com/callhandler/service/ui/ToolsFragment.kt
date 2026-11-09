@@ -40,6 +40,10 @@ class ToolsFragment : Fragment() {
             startActivity(Intent(requireContext(), DebugConsoleActivity::class.java))
         }
 
+        view.findViewById<Button>(R.id.checkUpdatesButton).setOnClickListener {
+            (activity as? MainActivity)?.startUpdateCheck(manualTrigger = true)
+        }
+
         val versionText = view.findViewById<android.widget.TextView>(R.id.aboutVersionText)
         try {
             val pInfo = requireContext().packageManager.getPackageInfo(requireContext().packageName, 0)

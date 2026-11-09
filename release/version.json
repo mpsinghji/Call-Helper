@@ -1,0 +1,15 @@
+{
+  "versionCode": 8,
+  "versionName": "1.4.1",
+  "tagName": "v1.4.1",
+  "releaseName": "Release v1.4.1",
+  "buildDate": "2026-11-09",
+  "apkName": "CallHelper-v1.4.1.apk",
+  "githubRepo": "mpsinghji/Call-Helper",
+  "changelog": [
+    "feat: In-app auto-update checking on launch with smooth animated status card",
+    "feat: Auto-download from GitHub Releases and prompt for PackageInstaller",
+    "feat: Manual 'Check for updates' button in Tools tab",
+    "feat: FileProvider integration for Android O+ unknown app installation"
+  ]
+}
