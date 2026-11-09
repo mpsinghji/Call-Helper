@@ -266,8 +266,11 @@ object UpdateManager {
      * Returns true if remote is strictly newer.
      */
     fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean {
-        val remoteParts = remoteVersion.split("-")[0].split(".").mapNotNull { it.toIntOrNull() }
-        val currentParts = currentVersion.split("-")[0].split(".").mapNotNull { it.toIntOrNull() }
+        val cleanRemote = cleanVersion(remoteVersion)
+        val cleanCurrent = cleanVersion(currentVersion)
+
+        val remoteParts = cleanRemote.split("-")[0].split(".").mapNotNull { it.toIntOrNull() }
+        val currentParts = cleanCurrent.split("-")[0].split(".").mapNotNull { it.toIntOrNull() }
 
         val maxLen = maxOf(remoteParts.size, currentParts.size)
         for (i in 0 until maxLen) {
