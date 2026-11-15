@@ -35,8 +35,34 @@ jobs:
       - name: Run Unit Tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Decode Release Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 is not set in GitHub repository secrets!"
+            exit 1
+          fi
+          KEYSTORE_DIR="${RUNNER_TEMP}/keystore"
+          mkdir -p "$KEYSTORE_DIR"
+          KEYSTORE_PATH="${KEYSTORE_DIR}/release.jks"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          echo "KEYSTORE_FILE=$KEYSTORE_PATH" >> $GITHUB_ENV
+
+      - name: Build Release APK
+        env:
+          KEYSTORE_FILE: ${{ env.KEYSTORE_FILE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Cleanup Release Keystore
+        if: always()
+        run: |
+          if [ -n "$KEYSTORE_FILE" ] && [ -f "$KEYSTORE_FILE" ]; then
+            shred -u "$KEYSTORE_FILE" || rm -f "$KEYSTORE_FILE"
+          fi
 
       - name: Determine and Validate Version and Tag
         id: vars
@@ -74,8 +100,8 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "release_name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
 
-          SRC_APK="app/build/outputs/apk/debug/app-debug.apk"
-          DEST_APK="app/build/outputs/apk/debug/CallHelper-${TAG}.apk"
+          SRC_APK="app/build/outputs/apk/release/app-release.apk"
+          DEST_APK="app/build/outputs/apk/release/CallHelper-${TAG}.apk"
           if [ -f "$SRC_APK" ]; then
             cp "$SRC_APK" "$DEST_APK"
             echo "apk_path=${DEST_APK}" >> $GITHUB_OUTPUT
