@@ -40,7 +40,8 @@ data class VoipSession(
     var state: VoipCallState,
     var identity: String?,
     var announced: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    var sessionId: Long = 0L
 )
 
 /**
@@ -105,12 +106,24 @@ object VoipCallDetector {
         val callerName: String,
         val packageName: String,
         val direction: VoipCallDirection = VoipCallDirection.INCOMING,
-        val state: VoipCallState = VoipCallState.INCOMING_RINGING
+        val state: VoipCallState = VoipCallState.INCOMING_RINGING,
+        val sessionId: Long = 0L,
+        val notificationKey: String = ""
     ) {
         /** e.g. "WhatsApp voice call from John" */
         fun toAnnouncementText(): String =
             "$appDisplayName $callType from $callerName"
     }
+
+    /**
+     * Result of checking whether an updated notification represents a terminal event.
+     */
+    data class VoipTerminalResult(
+        val sessionId: Long,
+        val notificationKey: String,
+        val isDeclinedOrEnded: Boolean,
+        val isAnswered: Boolean
+    )
 
     /** All known VoIP app configurations. */
     private data class AppConfig(
@@ -386,6 +399,9 @@ object VoipCallDetector {
             session.announced = true
             logDecision(sbn, config, title, text, VoipCallDirection.INCOMING, VoipCallState.INCOMING_RINGING, callerName, true, "INCOMING_CALL")
 
+            val activeSessionId = CallDebugTracker.activeSession.value?.id ?: 0L
+            session.sessionId = activeSessionId
+
             val videoFields = "$title $text $subText".lowercase()
             val isVideo = config.videoHints.any { videoFields.contains(it) }
             val callType = if (isVideo) "video call" else "voice call"
@@ -396,7 +412,9 @@ object VoipCallDetector {
                 callerName = callerName,
                 packageName = sbn.packageName,
                 direction = VoipCallDirection.INCOMING,
-                state = VoipCallState.INCOMING_RINGING
+                state = VoipCallState.INCOMING_RINGING,
+                sessionId = session.sessionId,
+                notificationKey = sbn.key
             )
         }
 
@@ -406,11 +424,73 @@ object VoipCallDetector {
     }
 
     /**
+     * Checks if an updated notification for an existing active/announced session indicates
+     * that the call was declined, missed, ended, or answered.
+     */
+    fun checkNotificationTerminalEvent(sbn: StatusBarNotification): VoipTerminalResult? {
+        val config = appConfigMap[sbn.packageName] ?: return null
+        val session = activeSessions[sbn.key] ?: return null
+        if (session.direction != VoipCallDirection.INCOMING) return null
+
+        val notification = sbn.notification
+        val extras = notification.extras
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty()
+        val combined = "$title $text $subText $bigText"
+        val combinedLower = combined.lowercase()
+
+        // 1. Noise hints or explicit decline/ended hints
+        val hasNoiseOrDecline = config.noiseHints.any { combinedLower.contains(it) } ||
+            NON_RINGING_CALL_HINT.containsMatchIn(combined)
+
+        // 2. Duration timestamp (call answered/active)
+        val isNonRingingDuration = DURATION_TIMESTAMP_REGEX.matches(text.trim())
+
+        // 3. System call type extra (API 31+)
+        val callTypeExtra = extras.getInt(Notification.EXTRA_CALL_TYPE, -1)
+            .takeIf { it != -1 } ?: extras.getInt("android.callType", -1)
+        val isOngoingStyle = callTypeExtra == 3 // CALL_TYPE_ONGOING
+
+        // 4. Actions check
+        val actions = notification.actions.orEmpty()
+        val hasAnswerAction = actions.any { action ->
+            val actionTitle = action.title?.toString().orEmpty().lowercase()
+            action.semanticAction == 1 ||
+                actionTitle.contains("answer") ||
+                actionTitle.contains("accept") ||
+                actionTitle.contains("receive")
+        }
+        val hasAnswerIntent = extras.containsKey("android.answerIntent")
+        val isIncomingCallStyle = callTypeExtra == 1
+        val hasIncomingHint = EXPLICIT_INCOMING_CALL_HINT.containsMatchIn(combined)
+        val stillLooksIncoming = hasAnswerAction || hasAnswerIntent || isIncomingCallStyle || hasIncomingHint
+
+        if (hasNoiseOrDecline || isNonRingingDuration || isOngoingStyle || !stillLooksIncoming) {
+            val isAnswered = isNonRingingDuration || isOngoingStyle
+            val state = if (isAnswered) VoipCallState.INCOMING_ACTIVE else VoipCallState.ENDED
+            session.state = state
+            val reason = if (isAnswered) "CALL_ANSWERED" else "CALL_DECLINED_OR_ENDED"
+            logDecision(sbn, config, title, text, session.direction, state, session.identity, false, reason)
+            return VoipTerminalResult(
+                sessionId = session.sessionId,
+                notificationKey = sbn.key,
+                isDeclinedOrEnded = (state == VoipCallState.ENDED),
+                isAnswered = isAnswered
+            )
+        }
+
+        return null
+    }
+
+    /**
      * Clean up session tracking when notification is removed.
      */
-    fun onNotificationRemoved(sbn: StatusBarNotification) {
+    fun onNotificationRemoved(sbn: StatusBarNotification): VoipSession? {
         val session = activeSessions.remove(sbn.key)
         if (session != null) {
+            session.state = VoipCallState.ENDED
             val title = session.identity.orEmpty()
             logDecision(
                 sbn = sbn,
@@ -425,7 +505,13 @@ object VoipCallDetector {
             )
             CallDebugTracker.onCallEnded()
         }
+        return session
     }
+
+    /**
+     * Get active session by notification key.
+     */
+    fun getSession(key: String): VoipSession? = activeSessions[key]
 
     /**
      * Clear all sessions (e.g. for unit tests or app reset).

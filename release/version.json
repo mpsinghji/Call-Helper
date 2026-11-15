@@ -1,16 +1,15 @@
 {
-  "versionCode": 8,
-  "versionName": "1.4.1",
-  "tagName": "v1.4.1",
-  "releaseName": "Release v1.4.1",
-  "buildDate": "2026-11-09",
-  "apkName": "CallHelper-v1.4.1.apk",
+  "versionCode": 9,
+  "versionName": "1.4.2",
+  "tagName": "v1.4.2",
+  "releaseName": "Release v1.4.2",
+  "buildDate": "2026-11-15",
+  "apkName": "CallHelper-v1.4.2.apk",
   "githubRepo": "mpsinghji/Call-Helper",
   "changelog": [
-    "feat: In-app auto-update checking on launch with smooth animated status card",
-    "feat: Auto-download from GitHub Releases and prompt for PackageInstaller",
-    "feat: Manual 'Check for updates' button in Tools tab",
-    "feat: FileProvider integration for Android O+ unknown app installation"
+    "fix: immediately stop TTS announcement on normal GSM call decline/disconnect",
+    "fix: immediately stop TTS announcement on WhatsApp incoming call decline/dismissal",
+    "feat: session ID association and cancellation guards across announcement lifecycle",
+    "test: unit test coverage for all 7 critical call decline and lifecycle scenarios"
   ]
 }
-

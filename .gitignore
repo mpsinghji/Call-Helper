@@ -13,6 +13,7 @@ secrets.properties
 .idea/navEditor.xml
 .idea/assetWizardSettings.xml
 .idea/shelf/
+.idea/deviceManager.xml
 *.iml
 *.ipr
 *.iws
@@ -25,6 +26,7 @@ captures/
 *.ap_
 *.aab
 output.json
+android-sdk/
 
 # Kotlin
 .kotlin/

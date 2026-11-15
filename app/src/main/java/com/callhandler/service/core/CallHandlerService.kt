@@ -33,8 +33,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import android.content.Context
 import android.telephony.PhoneStateListener
@@ -70,12 +72,15 @@ class CallHandlerService : Service() {
     private var speakerRequested = false
     private var fgsMicGranted = false
     private var currentIdentity: CallerIdentity = CallerIdentity.unknown(null)
+    @Volatile
+    private var currentSessionId: Long = 0L
 
     @Suppress("DEPRECATION")
     private var phoneStateListener: PhoneStateListener? = null
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         settings = SettingsManager(this)
         stateMachine = CallStateMachine { from, to ->
             Log.d(TAG, "State: $from -> $to")
@@ -141,6 +146,7 @@ class CallHandlerService : Service() {
     private fun onRinging(number: String?, source: String) {
         Log.d(TAG, "onRinging: source=$source, numberPresent=${!number.isNullOrBlank()}")
         CallDebugTracker.onCallDetected(number, source)
+        currentSessionId = CallDebugTracker.activeSession.value?.id ?: 0L
 
         if (!number.isNullOrBlank()) {
             scope.launch(Dispatchers.IO) {
@@ -241,7 +247,8 @@ class CallHandlerService : Service() {
      * STREAM_RING (speaker ringtone) is NEVER touched.
      */
     private suspend fun announceViaBluetooth(identity: CallerIdentity) {
-        if (!stateMachine.isRinging) return
+        val sessionId = currentSessionId
+        if (!stateMachine.isRinging || announcer.isSessionCancelled(sessionId)) return
 
         val repeatEnabled = settings.repeatAnnouncementEnabled
         if (!CallDebugTracker.canStartAnnouncement(repeatEnabled)) {
@@ -253,6 +260,12 @@ class CallHandlerService : Service() {
         val scoOk = audioRouter.connectBluetoothAudio()
         if (!scoOk) {
             Log.w(TAG, "SCO connection failed — skipping announcement (never plays on speaker)")
+            return
+        }
+
+        // Terminal-state and cancellation check immediately after SCO connection
+        if (!stateMachine.isRinging || announcer.isSessionCancelled(sessionId) || !currentCoroutineContext().isActive) {
+            Log.d(TAG, "Announcement cancelled after SCO connection (session=$sessionId)")
             return
         }
 
@@ -282,7 +295,7 @@ class CallHandlerService : Service() {
             }
         }
 
-        Log.i(TAG, "Announcing via Bluetooth: '$name' (spam=${identity.spamStatus})")
+        Log.i(TAG, "Announcing via Bluetooth [session=$sessionId]: '$name' (spam=${identity.spamStatus})")
         CallDebugTracker.onAnnouncementPrepared(
             name = name,
             text = text,
@@ -295,10 +308,40 @@ class CallHandlerService : Service() {
             val shouldPlay = audioRouter.prepareForAnnouncement(
                 settings.announcementVolumePct
             )
-            if (shouldPlay) {
-                announcer.announce(text)
-            } else {
+            if (!shouldPlay) {
                 Log.d(TAG, "Announcement volume is 0% — skipping TTS")
+                return
+            }
+
+            var repeatCount = 0
+            val maxRepeats = if (repeatEnabled) MAX_ANNOUNCEMENT_REPEATS else 1
+
+            while (repeatCount < maxRepeats) {
+                // Terminal-state and cancellation checks before starting TTS and before each repeat segment
+                if (!stateMachine.isRinging ||
+                    announcer.isSessionCancelled(sessionId) ||
+                    !currentCoroutineContext().isActive
+                ) {
+                    Log.d(TAG, "Announcement stopped before utterance (session=$sessionId, repeat=$repeatCount)")
+                    break
+                }
+
+                announcer.announce(text, sessionId) {
+                    !stateMachine.isRinging || announcer.isSessionCancelled(sessionId)
+                }
+
+                repeatCount++
+
+                // Before next repeat segment: check again and delay
+                if (repeatCount < maxRepeats && repeatEnabled) {
+                    if (!stateMachine.isRinging ||
+                        announcer.isSessionCancelled(sessionId) ||
+                        !currentCoroutineContext().isActive
+                    ) {
+                        break
+                    }
+                    delay(REPEAT_INTERVAL_MS)
+                }
             }
         } finally {
             // Restore audio mode + abandon focus (volume stays for the call)
@@ -383,8 +426,20 @@ class CallHandlerService : Service() {
         stopSelfSafely()
     }
 
-    private fun onCallEnded() {
-        Log.d(TAG, "onCallEnded: state=${stateMachine.current}")
+    fun cancelCurrentAnnouncement() {
+        val sid = currentSessionId
+        Log.i(TAG, "cancelCurrentAnnouncement called for session=$sid")
+        announcer.cancelAnnouncement(sid)
+        announcer.stopSpeaking()
+        sessionJob?.cancel()
+        audioRouter.cleanupAudio()
+    }
+
+    fun onCallEnded() {
+        Log.d(TAG, "onCallEnded: state=${stateMachine.current}, session=$currentSessionId")
+        val sid = currentSessionId
+        announcer.cancelAnnouncement(sid)
+        announcer.stopSpeaking()
         CallDebugTracker.onCallEnded()
         identityManager.reset()
         if (stateMachine.current == CallState.IDLE) return
@@ -395,6 +450,7 @@ class CallHandlerService : Service() {
     }
 
     private fun stopSession() {
+        val sid = currentSessionId
         sessionJob?.cancel()
         sessionJob = null
         overlayStateJob?.cancel()
@@ -402,6 +458,7 @@ class CallHandlerService : Service() {
         heardTextJob?.cancel()
         heardTextJob = null
         scope.coroutineContext.cancelChildren()
+        announcer.cancelAnnouncement(sid)
         announcer.stopSpeaking()
         voiceCommands.stopListening()
         hideStatusOverlay()
@@ -418,6 +475,7 @@ class CallHandlerService : Service() {
     }
 
     override fun onDestroy() {
+        if (activeInstance == this) activeInstance = null
         unregisterPhoneStateListener()
         audioRouter.stopCallVolumeHold()
         stopSession()
@@ -694,5 +752,11 @@ class CallHandlerService : Service() {
         private const val NOTIFICATION_ID = 42
         private const val TRUECALLER_WAIT_MS = 2500L
         private const val ANSWER_FALLBACK_MS = 700L
+        private const val REPEAT_INTERVAL_MS = 3000L
+        private const val MAX_ANNOUNCEMENT_REPEATS = 3
+
+        @Volatile
+        var activeInstance: CallHandlerService? = null
+            private set
     }
 }

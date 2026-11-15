@@ -63,6 +63,7 @@ class CallStateReceiver : BroadcastReceiver() {
 
             TelephonyManager.EXTRA_STATE_IDLE -> {
                 com.callhandler.service.debug.CallDebugTracker.onCallEnded()
+                CallHandlerService.activeInstance?.cancelCurrentAnnouncement()
                 val serviceIntent = Intent(context, CallHandlerService::class.java).apply {
                     action = CallHandlerService.ACTION_ENDED
                 }

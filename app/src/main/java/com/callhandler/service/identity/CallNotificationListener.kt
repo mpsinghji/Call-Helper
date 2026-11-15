@@ -42,10 +42,13 @@ class CallNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        // Clean up tracking when notification is dismissed (call ended/missed)
+        // Clean up tracking when notification is dismissed (call ended/missed/declined)
         if (sbn.packageName in VoipCallDetector.KNOWN_PACKAGES) {
             announcedVoipCalls.remove(sbn.key)
-            VoipCallDetector.onNotificationRemoved(sbn)
+            val session = VoipCallDetector.onNotificationRemoved(sbn)
+            val sessionId = session?.sessionId ?: 0L
+            Log.i(TAG, "VoIP notification removed: key=${sbn.key}, session=$sessionId — stopping announcement")
+            VoipAnnouncementService.stopAnnouncement(this, sessionId, sbn.key)
         }
     }
 
@@ -58,9 +61,23 @@ class CallNotificationListener : NotificationListenerService() {
         
         Log.d(TAG, "VoIP notification from ${sbn.packageName}: title='$notifTitle', text='$notifText', key=${sbn.key}")
 
-        // Avoid duplicate announcement for the same notification
+        // If this notification was already announced, check if it transitioned to declined/ended/answered
         if (sbn.key in announcedVoipCalls) {
-            Log.d(TAG, "Already announced this notification key: ${sbn.key}")
+            val terminalResult = VoipCallDetector.checkNotificationTerminalEvent(sbn)
+            if (terminalResult != null) {
+                Log.i(TAG, "VoIP notification transitioned to terminal state: $terminalResult — stopping announcement")
+                announcedVoipCalls.remove(sbn.key)
+                VoipAnnouncementService.stopAnnouncement(
+                    context = this,
+                    sessionId = terminalResult.sessionId,
+                    notificationKey = terminalResult.notificationKey
+                )
+                if (terminalResult.isDeclinedOrEnded) {
+                    VoipCallDetector.onNotificationRemoved(sbn)
+                }
+            } else {
+                Log.d(TAG, "Already announced this notification key and still active: ${sbn.key}")
+            }
             return
         }
 
@@ -80,8 +97,13 @@ class CallNotificationListener : NotificationListenerService() {
         announcedVoipCalls.add(sbn.key)
 
         val announcementText = callInfo.toAnnouncementText()
-        Log.i(TAG, "VoIP call detected: $announcementText [key=${sbn.key}]")
-        VoipAnnouncementService.announce(this, announcementText)
+        Log.i(TAG, "VoIP call detected: $announcementText [key=${sbn.key}, session=${callInfo.sessionId}]")
+        VoipAnnouncementService.announce(
+            context = this,
+            text = announcementText,
+            sessionId = callInfo.sessionId,
+            notificationKey = callInfo.notificationKey
+        )
     }
 
     // ----------------------------------------------------------- Truecaller
