@@ -1,12 +1,13 @@
 {
-  "versionCode": 9,
-  "versionName": "1.4.2",
-  "tagName": "v1.4.2",
-  "releaseName": "Release v1.4.2",
+  "versionCode": 10,
+  "versionName": "1.4.3",
+  "tagName": "v1.4.3",
+  "releaseName": "Release v1.4.3",
   "buildDate": "2026-11-15",
-  "apkName": "CallHelper-v1.4.2.apk",
+  "apkName": "CallHelper-v1.4.3.apk",
   "githubRepo": "mpsinghji/Call-Helper",
   "changelog": [
+    "ci: permanent production signing configuration across all future builds",
     "fix: immediately stop TTS announcement on normal GSM call decline/disconnect",
     "fix: immediately stop TTS announcement on WhatsApp incoming call decline/dismissal",
     "feat: session ID association and cancellation guards across announcement lifecycle",
