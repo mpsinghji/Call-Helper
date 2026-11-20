@@ -109,42 +109,10 @@ class CallNotificationListener : NotificationListenerService() {
     // ----------------------------------------------------------- Truecaller
 
     private fun handleTruecaller(sbn: StatusBarNotification) {
-        val extras = sbn.notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-        val combined = "$title $text"
-
-        val isCallCategory = sbn.notification.category == Notification.CATEGORY_CALL
-        val looksLikeIncomingCall = INCOMING_CALL_HINTS.any {
-            combined.contains(it, ignoreCase = true)
-        }
-        val looksLikeNoise = NOISE_HINTS.any {
-            combined.contains(it, ignoreCase = true)
-        }
-
-        if (looksLikeNoise) {
-            Log.d(TAG, "Ignoring non-call Truecaller notification: $title")
-            return
-        }
-        if (!isCallCategory && !looksLikeIncomingCall) return
-
-        val callerName = extractTruecallerName(title, text) ?: return
-
-        // Try to extract a phone number from the notification text for cross-call validation
-        val phoneNumber = extractPhoneNumberFromText(title) ?: extractPhoneNumberFromText(text)
-
-        runCatching {
-            startService(
-                Intent(this, CallHandlerService::class.java)
-                    .setAction(CallHandlerService.ACTION_TRUECALLER_UPDATE)
-                    .putExtra(CallHandlerService.EXTRA_CALLER_NAME, callerName)
-                    .apply {
-                        if (phoneNumber != null) {
-                            putExtra(CallHandlerService.EXTRA_CALLER_NUMBER, phoneNumber)
-                        }
-                    }
-            )
-        }
+        // Step 1: Proof of concept & diagnostic-only inspection
+        // Captures actual metadata and extras without mutating production identity or announcing
+        val report = TruecallerNotificationDiagnosticInspector.inspect(sbn)
+        Log.d(TAG, "Truecaller diagnostic capture: ${report.summary}")
     }
 
     private fun extractTruecallerName(title: String, text: String): String? {

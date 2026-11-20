@@ -3,14 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val releaseKeystoreFile: String? = System.getenv("KEYSTORE_FILE")
-    ?: (project.findProperty("KEYSTORE_FILE") as? String)
-val releaseKeystorePassword: String? = System.getenv("KEYSTORE_PASSWORD")
-    ?: (project.findProperty("KEYSTORE_PASSWORD") as? String)
-val releaseKeyAlias: String? = System.getenv("KEY_ALIAS")
-    ?: (project.findProperty("KEY_ALIAS") as? String)
-val releaseKeyPassword: String? = System.getenv("KEY_PASSWORD")
-    ?: (project.findProperty("KEY_PASSWORD") as? String)
+val releaseKeystoreFile: String? = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    ?: (project.findProperty("KEYSTORE_FILE") as? String)?.takeIf { it.isNotBlank() }
+val releaseKeystorePassword: String? = System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    ?: (project.findProperty("KEYSTORE_PASSWORD") as? String)?.takeIf { it.isNotBlank() }
+val releaseKeyAlias: String? = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    ?: (project.findProperty("KEY_ALIAS") as? String)?.takeIf { it.isNotBlank() }
+val releaseKeyPassword: String? = System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+    ?: (project.findProperty("KEY_PASSWORD") as? String)?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.callhandler.service"
@@ -20,8 +20,8 @@ android {
         applicationId = "com.callhandler.service"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.4.3"
+        versionCode = 11
+        versionName = "1.4.4-diag"
     }
 
     signingConfigs {
