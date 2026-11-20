@@ -1,0 +1,320 @@
+name: Build Diagnostic APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, Sign & Encrypt Diagnostic APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Encryption Key Secret
+        env:
+          ARTIFACT_ENCRYPTION_KEY: ${{ secrets.ARTIFACT_ENCRYPTION_KEY }}
+        run: |
+          if [ -z "$ARTIFACT_ENCRYPTION_KEY" ]; then
+            echo "::error::Required secret ARTIFACT_ENCRYPTION_KEY is not set or empty! All diagnostic builds require artifact encryption."
+            exit 1
+          fi
+          echo "Confirmed: ARTIFACT_ENCRYPTION_KEY secret is present and non-empty."
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Verify Original Version and Apply Diagnostic Override
+        run: |
+          python3 - << 'EOF'
+          with open("app/build.gradle.kts", "r") as f:
+              content = f.read()
+
+          count_vc = content.count("versionCode = 10")
+          count_vn = content.count('versionName = "1.4.3"')
+
+          if count_vc != 1:
+              raise ValueError(f"Precondition failed: Expected exactly 1 occurrence of 'versionCode = 10', found {count_vc}")
+          if count_vn != 1:
+              raise ValueError(f"Precondition failed: Expected exactly 1 occurrence of 'versionName = \"1.4.3\"', found {count_vn}")
+
+          content = content.replace("versionCode = 10", "versionCode = 11", 1)
+          content = content.replace('versionName = "1.4.3"', 'versionName = "1.4.4-diag"', 1)
+
+          new_count_vc = content.count("versionCode = 11")
+          new_count_vn = content.count('versionName = "1.4.4-diag"')
+
+          if new_count_vc != 1:
+              raise ValueError(f"Postcondition failed: Expected exactly 1 occurrence of 'versionCode = 11', found {new_count_vc}")
+          if new_count_vn != 1:
+              raise ValueError(f"Postcondition failed: Expected exactly 1 occurrence of 'versionName = \"1.4.4-diag\"', found {new_count_vn}")
+
+          if content.count("versionCode = 10") != 0:
+              raise ValueError("Postcondition failed: 'versionCode = 10' still present after replacement")
+          if content.count('versionName = "1.4.3"') != 0:
+              raise ValueError("Postcondition failed: 'versionName = \"1.4.3\"' still present after replacement")
+
+          with open("app/build.gradle.kts", "w") as f:
+              f.write(content)
+          EOF
+
+          echo "Confirmed: Overrode checkout app/build.gradle.kts to versionCode 11, versionName 1.4.4-diag"
+          grep -E "versionCode|versionName" app/build.gradle.kts
+
+      - name: Validate Release Signing Secrets
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::Required secret KEYSTORE_PASSWORD is not set or empty!"
+            exit 1
+          fi
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "::error::Required secret KEY_ALIAS is not set or empty!"
+            exit 1
+          fi
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Required secret KEY_PASSWORD is not set or empty!"
+            exit 1
+          fi
+          echo "Confirmed: KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD secrets are present and non-empty."
+
+      - name: Decode Release Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 is not set or empty!"
+            exit 1
+          fi
+          KEYSTORE_DIR="${RUNNER_TEMP}/keystore"
+          mkdir -p "$KEYSTORE_DIR"
+          KEYSTORE_PATH="${KEYSTORE_DIR}/release.jks"
+
+          if ! echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+            echo "::error::base64 decoding of KEYSTORE_BASE64 failed!"
+            exit 1
+          fi
+
+          if [ ! -s "$KEYSTORE_PATH" ]; then
+            echo "::error::Decoded keystore file is empty (0 bytes) or was not created!"
+            exit 1
+          fi
+
+          echo "KEYSTORE_FILE=$KEYSTORE_PATH" >> $GITHUB_ENV
+          echo "Confirmed: Keystore file decoded successfully and is non-empty."
+
+      - name: Build Release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Clean Up Temporary Release Keystore File
+        if: always()
+        run: |
+          KEYSTORE_TARGET="${RUNNER_TEMP}/keystore/release.jks"
+          if [ -f "$KEYSTORE_TARGET" ]; then
+            echo "Removing temporary release keystore from runner filesystem..."
+            shred -u "$KEYSTORE_TARGET" || rm -f "$KEYSTORE_TARGET"
+            echo "Temporary keystore file cleaned up from runner filesystem."
+          elif [ -n "$KEYSTORE_FILE" ] && [ -f "$KEYSTORE_FILE" ]; then
+            shred -u "$KEYSTORE_FILE" || rm -f "$KEYSTORE_FILE"
+          fi
+          rm -rf "${RUNNER_TEMP}/keystore" 2>/dev/null || true
+
+      - name: Verify Diagnostic APK Integrity & Production Signature
+        run: |
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::Generated release APK not found at $APK_PATH"
+            exit 1
+          fi
+
+          BUILD_TOOLS_DIR=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)
+          AAPT="$BUILD_TOOLS_DIR/aapt"
+          APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
+          echo "Using Android build-tools from: $BUILD_TOOLS_DIR"
+
+          # 1. Verify Package Name, versionCode, and versionName
+          BADGING=$("$AAPT" dump badging "$APK_PATH")
+          PKG_NAME=$(echo "$BADGING" | grep -m 1 -o "package: name='[^']*'" | cut -d"'" -f2)
+          V_CODE=$(echo "$BADGING" | grep -m 1 -o " versionCode='[^']*'" | cut -d"'" -f2)
+          V_NAME=$(echo "$BADGING" | grep -m 1 -o " versionName='[^']*'" | cut -d"'" -f2)
+
+          echo "APK Metadata: Package=$PKG_NAME, versionCode=$V_CODE, versionName=$V_NAME"
+
+          if [ "$PKG_NAME" != "com.callhandler.service" ]; then
+            echo "::error::Package ID mismatch! Expected 'com.callhandler.service', found '$PKG_NAME'"
+            exit 1
+          fi
+          if [ "$V_CODE" != "11" ]; then
+            echo "::error::versionCode mismatch! Expected '11', found '$V_CODE'"
+            exit 1
+          fi
+          if [ "$V_NAME" != "1.4.4-diag" ]; then
+            echo "::error::versionName mismatch! Expected '1.4.4-diag', found '$V_NAME'"
+            exit 1
+          fi
+
+          # 2. Verify Production Signing Certificate SHA-256 (exact, case-insensitive)
+          CERT_OUTPUT=$("$APKSIGNER" verify --verbose --print-certs "$APK_PATH")
+          echo "$CERT_OUTPUT"
+
+          EXPECTED_SHA256="23414c2ab95cddc0e1818a73fd00867b2578233462543585aa900e2090491c39"
+          ACTUAL_SHA256=$(echo "$CERT_OUTPUT" | grep -i "certificate SHA-256 digest:" | head -n 1 | awk '{print $NF}' | tr '[:upper:]' '[:lower:]')
+          EXPECTED_LOWER=$(echo "$EXPECTED_SHA256" | tr '[:upper:]' '[:lower:]')
+
+          echo "Expected Certificate SHA-256: $EXPECTED_LOWER"
+          echo "Extracted Certificate SHA-256: $ACTUAL_SHA256"
+
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_LOWER" ]; then
+            echo "::error::Production certificate mismatch! Expected '$EXPECTED_LOWER', got '$ACTUAL_SHA256'"
+            exit 1
+          fi
+
+          echo "=================================================="
+          echo "VERIFICATION PASSED: Production Certificate SHA-256 matches exactly!"
+          echo "Plaintext APK SHA-256 Checksum:"
+          sha256sum "$APK_PATH"
+          echo "=================================================="
+
+      - name: Encrypt Diagnostic APK (GPG Symmetric AES-256 with MDC)
+        env:
+          ARTIFACT_ENCRYPTION_KEY: ${{ secrets.ARTIFACT_ENCRYPTION_KEY }}
+        run: |
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
+          ENC_DIR="app/build/outputs/apk/release/encrypted"
+          mkdir -p "$ENC_DIR"
+          ENC_APK_PATH="$ENC_DIR/CallHelper-v1.4.4-diag.apk.gpg"
+
+          echo "Encrypting diagnostic APK using GPG symmetric AES-256 with MDC integrity protection..."
+          printf '%s' "$ARTIFACT_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --symmetric --cipher-algo AES256 --force-mdc --s2k-digest-algo SHA256 \
+            --output "$ENC_APK_PATH" "$APK_PATH"
+
+          # 1. Verify encrypted output exists and is non-empty
+          if [ ! -s "$ENC_APK_PATH" ]; then
+            echo "::error::Encryption failed: Encrypted file is missing or 0 bytes!"
+            exit 1
+          fi
+
+          # 2. Inspect OpenPGP packet structure and verify MDC integrity-protection mode (fails closed if GPG fails)
+          PACKET_FILE="${RUNNER_TEMP}/gpg_packet_info.txt"
+          printf '%s' "$ARTIFACT_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --list-packets "$ENC_APK_PATH" > "$PACKET_FILE" 2>&1
+          GPG_LP_EXIT=$?
+
+          if [ $GPG_LP_EXIT -ne 0 ]; then
+            echo "::error::GPG packet inspection failed with exit status $GPG_LP_EXIT"
+            cat "$PACKET_FILE"
+            exit 1
+          fi
+
+          python3 - "$PACKET_FILE" << 'EOF'
+          import sys, re
+          with open(sys.argv[1], "r", encoding="utf-8") as f:
+              output = f.read()
+
+          # Strictly forbid unauthenticated Tag 9 encrypted data packets
+          if re.search(r"tag=9\b.*:encrypted data packet:", output, re.IGNORECASE):
+              print("::error::Security failure: Unauthenticated Tag 9 encrypted data packet detected!", file=sys.stderr)
+              sys.exit(1)
+
+          # Require Tag 18 (SEIPD) packet containing mdc_method: 2 specifically
+          match = re.search(r"tag=18\b[^\n]*\n:encrypted data packet:\s*\n(?:\t[^\n]*\n)*\tmdc_method:\s*2\b", output)
+          if not match:
+              print("::error::Integrity check failed: Tag 18 (SEIPD) encrypted-data packet with mdc_method: 2 not found!", file=sys.stderr)
+              sys.exit(2)
+
+          print("Confirmed: Verified encrypted-data packet is Tag 18 (SEIPD) with mdc_method: 2.")
+          EOF
+          PY_PACKET_EXIT=$?
+
+          if [ $PY_PACKET_EXIT -ne 0 ]; then
+            echo "::error::GPG packet verification failed with exit code $PY_PACKET_EXIT"
+            exit 1
+          fi
+
+          # 3. Round-trip verification: decrypt to a temporary location and verify status-fd GOODMDC and SHA-256
+          VERIFY_FILE="${RUNNER_TEMP}/verify_decrypted.apk"
+          DECRYPT_STATUS_FILE="${RUNNER_TEMP}/gpg_decrypt_status.txt"
+          printf '%s' "$ARTIFACT_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --status-fd 1 --decrypt \
+            --output "$VERIFY_FILE" "$ENC_APK_PATH" > "$DECRYPT_STATUS_FILE" 2>&1
+          GPG_DEC_EXIT=$?
+
+          if [ $GPG_DEC_EXIT -ne 0 ]; then
+            echo "::error::Round-trip decryption failed with exit status $GPG_DEC_EXIT"
+            cat "$DECRYPT_STATUS_FILE"
+            exit 1
+          fi
+
+          if ! grep -q "\[GNUPG:\] GOODMDC" "$DECRYPT_STATUS_FILE"; then
+            echo "::error::Decryption failed cryptographic MDC verification: [GNUPG:] GOODMDC not reported!"
+            cat "$DECRYPT_STATUS_FILE"
+            exit 1
+          fi
+          echo "Confirmed: Cryptographic MDC integrity check passed ([GNUPG:] GOODMDC verified)."
+
+          ORIG_SHA=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          VERIFY_SHA=$(sha256sum "$VERIFY_FILE" | awk '{print $1}')
+
+          echo "Original Plaintext APK SHA-256: $ORIG_SHA"
+          echo "Decrypted Test APK SHA-256:     $VERIFY_SHA"
+
+          if [ "$ORIG_SHA" != "$VERIFY_SHA" ]; then
+            echo "::error::Encryption integrity verification failed! Decrypted checksum does not match original APK."
+            exit 1
+          fi
+
+          # Clean up temporary verification and status files
+          rm -f "$VERIFY_FILE" "$PACKET_FILE" "$DECRYPT_STATUS_FILE"
+
+          # Shred and remove the plaintext APK from the workspace immediately
+          shred -u "$APK_PATH" || rm -f "$APK_PATH"
+          echo "Plaintext APK removed from workspace."
+
+          echo "=================================================="
+          echo "ENCRYPTION PASSED: GPG AES-256 MDC-protected artifact ready."
+          echo "Encrypted Artifact SHA-256 Checksum:"
+          sha256sum "$ENC_APK_PATH"
+          echo "=================================================="
+
+      - name: Clean Up Temporary Files and Plaintext Artifacts
+        if: always()
+        run: |
+          echo "Purging temporary artifacts and decrypted verification files from runner filesystem..."
+          rm -f "${RUNNER_TEMP}/verify_decrypted.apk" 2>/dev/null || true
+          rm -f "${RUNNER_TEMP}/gpg_packet_info.txt" 2>/dev/null || true
+          rm -f "${RUNNER_TEMP}/gpg_decrypt_status.txt" 2>/dev/null || true
+          rm -rf "${RUNNER_TEMP}/keystore" 2>/dev/null || true
+          find app/build/outputs/apk/release -maxdepth 1 -name "*.apk" -exec rm -f {} + 2>/dev/null || true
+          echo "Temporary files and any plaintext APKs purged from runner filesystem."
+
+      - name: Upload Encrypted Diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CallHelper-v1.4.4-diag-encrypted
+          path: app/build/outputs/apk/release/encrypted/CallHelper-v1.4.4-diag.apk.gpg
+          if-no-files-found: error
+          retention-days: 7
