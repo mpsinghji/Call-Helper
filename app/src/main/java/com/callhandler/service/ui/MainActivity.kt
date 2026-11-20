@@ -20,6 +20,7 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.callhandler.service.R
+import com.callhandler.service.settings.SettingsManager
 import com.callhandler.service.update.UpdateManager
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.progressindicator.LinearProgressIndicator
@@ -62,8 +63,11 @@ class MainActivity : AppCompatActivity() {
             }
         }.attach()
 
-        // Automatically check for GitHub release updates on startup
-        startUpdateCheck(manualTrigger = false)
+        // Automatically check for GitHub release updates on startup if enabled
+        val settings = SettingsManager(this)
+        if (settings.checkUpdatesEnabled) {
+            startUpdateCheck(manualTrigger = false)
+        }
     }
 
     private var isCheckingUpdate = false
@@ -76,6 +80,12 @@ class MainActivity : AppCompatActivity() {
      * - If update found: automatically downloads APK, updates progress, and launches installer prompt.
      */
     fun startUpdateCheck(manualTrigger: Boolean = false) {
+        if (!manualTrigger) {
+            val settings = SettingsManager(this)
+            if (!settings.checkUpdatesEnabled) {
+                return
+            }
+        }
         if (isCheckingUpdate) return
         isCheckingUpdate = true
 

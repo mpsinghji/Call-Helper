@@ -81,7 +81,7 @@
     <string name="overlay_debug_text_desc">Speech recognizer output</string>
 
     <!-- Truecaller Accessibility & Debug Console -->
-    <string name="truecaller_a11y_label">VCA Truecaller Debug</string>
+    <string name="truecaller_a11y_label">Call Handler — Truecaller Debug</string>
     <string name="truecaller_a11y_description">Observes Truecaller overlay for caller ID announcements.</string>
     <string name="debug_console_title">Truecaller Debug Console</string>
     <string name="btn_debug_console">Open Truecaller Debug Console</string>
@@ -120,6 +120,9 @@
     <string name="about_privacy_note">Built for privacy and safety. All call state analysis, contacts matching, and voice processing execute 100% locally on-device.</string>
 
     <!-- In-App Auto-Update -->
+    <string name="pref_cat_updates">Updates</string>
+    <string name="pref_check_updates_title">Check update</string>
+    <string name="pref_check_updates_summary">Automatically check for app updates on startup</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_latest">You’re on the latest version (v%1$s)</string>
     <string name="update_available">Update %1$s available</string>

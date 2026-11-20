@@ -51,6 +51,15 @@ class SettingsManager(context: Context) {
     val spamAnnouncementPolicy: SpamAnnouncementPolicy
         get() = SpamAnnouncementPolicy.fromPref(prefs.getString(KEY_SPAM_POLICY, "block"))
 
+    /** Whether automatic update checks on startup are enabled. */
+    val checkUpdatesEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CHECK_UPDATES, true)
+
+    /** Update the check updates preference (for programmatic changes and testing). */
+    fun setCheckUpdatesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CHECK_UPDATES, enabled).apply()
+    }
+
     companion object {
         const val KEY_VOICE_COMMANDS = "pref_voice_commands_enabled"
         const val KEY_ANNOUNCEMENT = "pref_announcement_enabled"
@@ -59,5 +68,6 @@ class SettingsManager(context: Context) {
         const val KEY_ANNOUNCEMENT_VOLUME = "pref_announcement_volume_pct"
         const val KEY_VOIP_ANNOUNCEMENT = "pref_voip_announcement_enabled"
         const val KEY_SPAM_POLICY = "pref_spam_announcement_policy"
+        const val KEY_CHECK_UPDATES = "pref_check_updates_enabled"
     }
 }

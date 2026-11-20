@@ -68,4 +68,14 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="@string/pref_cat_updates">
+
+        <CheckBoxPreference
+            android:key="pref_check_updates_enabled"
+            android:title="@string/pref_check_updates_title"
+            android:summary="@string/pref_check_updates_summary"
+            android:defaultValue="true" />
+
+    </PreferenceCategory>
+
 </PreferenceScreen>
