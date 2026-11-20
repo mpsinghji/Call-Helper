@@ -25,10 +25,18 @@ class AccessibilityConfigTest {
             content.contains("VCA")
         )
 
-        // Verify truecaller_a11y_label is Call Handler — Truecaller Debug
+        // Verify truecaller_a11y_label is Caller Identification Service
         assertTrue(
-            "truecaller_a11y_label must be set to 'Call Handler — Truecaller Debug'",
-            content.contains("<string name=\"truecaller_a11y_label\">Call Handler — Truecaller Debug</string>")
+            "truecaller_a11y_label must be set to 'Caller Identification Service'",
+            content.contains("<string name=\"truecaller_a11y_label\">Caller Identification Service</string>")
+        )
+        assertFalse(
+            "truecaller_a11y_label must not contain 'Call Handler'",
+            content.contains("<string name=\"truecaller_a11y_label\">Call Handler")
+        )
+        assertFalse(
+            "truecaller_a11y_label must not contain 'Truecaller Debug'",
+            content.contains("<string name=\"truecaller_a11y_label\">Truecaller Debug")
         )
 
         // Verify Check update checkbox strings exist

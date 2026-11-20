@@ -81,7 +81,7 @@
     <string name="overlay_debug_text_desc">Speech recognizer output</string>
 
     <!-- Truecaller Accessibility & Debug Console -->
-    <string name="truecaller_a11y_label">Call Handler — Truecaller Debug</string>
+    <string name="truecaller_a11y_label">Caller Identification Service</string>
     <string name="truecaller_a11y_description">Observes Truecaller overlay for caller ID announcements.</string>
     <string name="debug_console_title">Truecaller Debug Console</string>
     <string name="btn_debug_console">Open Truecaller Debug Console</string>
