@@ -20,8 +20,8 @@ android {
         applicationId = "com.callhandler.service"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.4.5"
+        versionCode = 13
+        versionName = "1.4.6"
     }
 
     signingConfigs {
@@ -116,4 +116,5 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.json:json:20240303")
 }

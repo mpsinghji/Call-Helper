@@ -1,0 +1,2 @@
+# SHA-256 checksum for CallHelper-v1.4.6.apk
+# Pending official CI build artifact verification

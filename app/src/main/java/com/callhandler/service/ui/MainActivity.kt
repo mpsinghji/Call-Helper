@@ -29,6 +29,7 @@ import com.google.android.material.tabs.TabLayoutMediator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Hosts the tabbed interface:
@@ -70,7 +71,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var isCheckingUpdate = false
+    private val isCheckingUpdate = AtomicBoolean(false)
     private var downloadedUpdateFile: File? = null
 
     /**
@@ -78,24 +79,43 @@ class MainActivity : AppCompatActivity() {
      * Displays a small floating card:
      * - If up-to-date: displays confirmation and fades away after 2 seconds.
      * - If update found: automatically downloads APK, updates progress, and launches installer prompt.
+     * - If error: on manual trigger shows categorized message and Retry button; on auto-check fails quietly.
      */
     fun startUpdateCheck(manualTrigger: Boolean = false) {
-        if (!manualTrigger) {
-            val settings = SettingsManager(this)
-            if (!settings.checkUpdatesEnabled) {
-                return
-            }
+        val settings = SettingsManager(this)
+        if (!UpdateManager.shouldCheckForUpdates(settings.checkUpdatesEnabled, manualTrigger)) {
+            return
         }
-        if (isCheckingUpdate) return
-        isCheckingUpdate = true
+        if (!isCheckingUpdate.compareAndSet(false, true)) return
 
-        val cardUpdate = findViewById<View>(R.id.cardUpdate) ?: return
-        val spinner = findViewById<ProgressBar>(R.id.updateSpinner) ?: return
-        val icon = findViewById<ImageView>(R.id.updateStatusIcon) ?: return
-        val tvStatus = findViewById<TextView>(R.id.tvUpdateStatus) ?: return
-        val btnAction = findViewById<Button>(R.id.btnUpdateAction) ?: return
-        val btnDismiss = findViewById<ImageButton>(R.id.btnDismissUpdate) ?: return
-        val progressIndicator = findViewById<LinearProgressIndicator>(R.id.updateProgressBar) ?: return
+        val cardUpdate = findViewById<View>(R.id.cardUpdate) ?: run {
+            isCheckingUpdate.set(false)
+            return
+        }
+        val spinner = findViewById<ProgressBar>(R.id.updateSpinner) ?: run {
+            isCheckingUpdate.set(false)
+            return
+        }
+        val icon = findViewById<ImageView>(R.id.updateStatusIcon) ?: run {
+            isCheckingUpdate.set(false)
+            return
+        }
+        val tvStatus = findViewById<TextView>(R.id.tvUpdateStatus) ?: run {
+            isCheckingUpdate.set(false)
+            return
+        }
+        val btnAction = findViewById<Button>(R.id.btnUpdateAction) ?: run {
+            isCheckingUpdate.set(false)
+            return
+        }
+        val btnDismiss = findViewById<ImageButton>(R.id.btnDismissUpdate) ?: run {
+            isCheckingUpdate.set(false)
+            return
+        }
+        val progressIndicator = findViewById<LinearProgressIndicator>(R.id.updateProgressBar) ?: run {
+            isCheckingUpdate.set(false)
+            return
+        }
 
         cardUpdate.animate().cancel()
         cardUpdate.alpha = 1f
@@ -115,98 +135,110 @@ class MainActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch {
-            when (val result = UpdateManager.checkForUpdate(currentVersion)) {
-                is UpdateManager.CheckResult.UpToDate -> {
-                    spinner.visibility = View.GONE
-                    icon.visibility = View.VISIBLE
-                    icon.setImageResource(R.drawable.ic_check_circle)
-                    tvStatus.text = getString(R.string.update_latest, currentVersion)
-
-                    delay(2000)
-                    cardUpdate.animate()
-                        .alpha(0f)
-                        .setDuration(400)
-                        .withEndAction {
-                            cardUpdate.visibility = View.GONE
-                            isCheckingUpdate = false
-                        }
-                        .start()
-                }
-
-                is UpdateManager.CheckResult.Error -> {
-                    if (manualTrigger) {
+            try {
+                when (val result = UpdateManager.checkForUpdate(currentVersion)) {
+                    is UpdateManager.CheckResult.UpToDate -> {
                         spinner.visibility = View.GONE
-                        tvStatus.text = getString(R.string.update_error)
-                        delay(2000)
-                    }
-                    cardUpdate.animate()
-                        .alpha(0f)
-                        .setDuration(400)
-                        .withEndAction {
-                            cardUpdate.visibility = View.GONE
-                            isCheckingUpdate = false
-                        }
-                        .start()
-                }
-
-                is UpdateManager.CheckResult.UpdateAvailable -> {
-                    spinner.visibility = View.GONE
-                    progressIndicator.visibility = View.VISIBLE
-                    progressIndicator.isIndeterminate = true
-                    tvStatus.text = getString(R.string.update_available, result.info.versionName)
-
-                    val downloadResult = UpdateManager.downloadApk(
-                        context = this@MainActivity,
-                        downloadUrl = result.info.downloadUrl,
-                        targetFileName = result.info.assetName
-                    ) { percent, bytesRead, totalBytes ->
-                        if (percent >= 0) {
-                            progressIndicator.isIndeterminate = false
-                            progressIndicator.progress = percent
-                            tvStatus.text = getString(R.string.update_downloading, result.info.versionName, percent)
-                        } else {
-                            progressIndicator.isIndeterminate = true
-                            val mb = bytesRead / (1024 * 1024.0)
-                            tvStatus.text = String.format("Downloading %.1f MB…", mb)
-                        }
-                    }
-
-                    if (downloadResult.isSuccess) {
-                        val apkFile = downloadResult.getOrThrow()
-                        downloadedUpdateFile = apkFile
-                        progressIndicator.visibility = View.GONE
                         icon.visibility = View.VISIBLE
-                        icon.setImageResource(R.drawable.ic_system_update)
-                        tvStatus.text = getString(R.string.update_downloaded, result.info.versionName)
-                        btnAction.visibility = View.VISIBLE
-                        btnAction.text = getString(R.string.update_btn_install)
-                        btnDismiss.visibility = View.VISIBLE
+                        icon.setImageResource(R.drawable.ic_check_circle)
+                        tvStatus.text = getString(R.string.update_latest, currentVersion)
 
-                        btnAction.setOnClickListener {
-                            UpdateManager.installApk(this@MainActivity, apkFile)
-                        }
-                        btnDismiss.setOnClickListener {
-                            cardUpdate.visibility = View.GONE
-                        }
+                        delay(2000)
+                        cardUpdate.animate()
+                            .alpha(0f)
+                            .setDuration(400)
+                            .withEndAction {
+                                cardUpdate.visibility = View.GONE
+                            }
+                            .start()
+                    }
 
-                        // Auto prompt install immediately as requested by user
-                        UpdateManager.installApk(this@MainActivity, apkFile)
-                    } else {
-                        progressIndicator.visibility = View.GONE
-                        tvStatus.text = "Download failed. Tap to retry."
-                        btnAction.visibility = View.VISIBLE
-                        btnAction.text = "Retry"
-                        btnAction.setOnClickListener {
-                            isCheckingUpdate = false
-                            startUpdateCheck(manualTrigger = true)
-                        }
-                        btnDismiss.visibility = View.VISIBLE
-                        btnDismiss.setOnClickListener {
+                    is UpdateManager.CheckResult.Error -> {
+                        spinner.visibility = View.GONE
+                        if (manualTrigger) {
+                            icon.visibility = View.VISIBLE
+                            icon.setImageResource(R.drawable.ic_close)
+                            val displayMsg = when (result.category) {
+                                UpdateManager.ErrorCategory.NO_NETWORK -> getString(R.string.update_error_network)
+                                UpdateManager.ErrorCategory.TIMEOUT -> getString(R.string.update_error_timeout)
+                                UpdateManager.ErrorCategory.RATE_LIMITED -> getString(R.string.update_error_rate_limited)
+                                UpdateManager.ErrorCategory.SERVER_ERROR -> getString(R.string.update_error_server)
+                                else -> result.userMessage.ifBlank { getString(R.string.update_error) }
+                            }
+                            tvStatus.text = displayMsg
+                            btnAction.visibility = View.VISIBLE
+                            btnAction.text = getString(R.string.retry)
+                            btnAction.setOnClickListener {
+                                startUpdateCheck(manualTrigger = true)
+                            }
+                            btnDismiss.visibility = View.VISIBLE
+                            btnDismiss.setOnClickListener {
+                                cardUpdate.visibility = View.GONE
+                            }
+                        } else {
                             cardUpdate.visibility = View.GONE
                         }
                     }
-                    isCheckingUpdate = false
+
+                    is UpdateManager.CheckResult.UpdateAvailable -> {
+                        spinner.visibility = View.GONE
+                        progressIndicator.visibility = View.VISIBLE
+                        progressIndicator.isIndeterminate = true
+                        tvStatus.text = getString(R.string.update_available, result.info.versionName)
+
+                        val downloadResult = UpdateManager.downloadApk(
+                            context = this@MainActivity,
+                            downloadUrl = result.info.downloadUrl,
+                            targetFileName = result.info.assetName
+                        ) { percent, bytesRead, totalBytes ->
+                            if (percent >= 0) {
+                                progressIndicator.isIndeterminate = false
+                                progressIndicator.progress = percent
+                                tvStatus.text = getString(R.string.update_downloading, result.info.versionName, percent)
+                            } else {
+                                progressIndicator.isIndeterminate = true
+                                val mb = bytesRead / (1024 * 1024.0)
+                                tvStatus.text = String.format("Downloading %.1f MB…", mb)
+                            }
+                        }
+
+                        if (downloadResult.isSuccess) {
+                            val apkFile = downloadResult.getOrThrow()
+                            downloadedUpdateFile = apkFile
+                            progressIndicator.visibility = View.GONE
+                            icon.visibility = View.VISIBLE
+                            icon.setImageResource(R.drawable.ic_system_update)
+                            tvStatus.text = getString(R.string.update_downloaded, result.info.versionName)
+                            btnAction.visibility = View.VISIBLE
+                            btnAction.text = getString(R.string.update_btn_install)
+                            btnDismiss.visibility = View.VISIBLE
+
+                            btnAction.setOnClickListener {
+                                UpdateManager.installApk(this@MainActivity, apkFile)
+                            }
+                            btnDismiss.setOnClickListener {
+                                cardUpdate.visibility = View.GONE
+                            }
+
+                            // Auto prompt install immediately as requested by user
+                            UpdateManager.installApk(this@MainActivity, apkFile)
+                        } else {
+                            progressIndicator.visibility = View.GONE
+                            tvStatus.text = "Download failed. Tap to retry."
+                            btnAction.visibility = View.VISIBLE
+                            btnAction.text = getString(R.string.retry)
+                            btnAction.setOnClickListener {
+                                startUpdateCheck(manualTrigger = true)
+                            }
+                            btnDismiss.visibility = View.VISIBLE
+                            btnDismiss.setOnClickListener {
+                                cardUpdate.visibility = View.GONE
+                            }
+                        }
+                    }
                 }
+            } finally {
+                isCheckingUpdate.set(false)
             }
         }
     }

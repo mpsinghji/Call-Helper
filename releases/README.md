@@ -7,6 +7,10 @@ This directory contains versioned documentation, build details, and cryptographi
 ```text
 releases/
 ├── README.md
+├── v1.4.6/
+│   ├── CHANGELOG.md
+│   ├── BUILD_INFO.md
+│   └── SHA256SUMS.txt
 ├── v1.4.5/
 │   ├── CHANGELOG.md
 │   ├── BUILD_INFO.md
@@ -20,13 +24,14 @@ releases/
 ## Official Downloads
 
 Official signed release APKs are hosted on GitHub Releases:
-- [Latest Release (v1.4.5)](https://github.com/mpsinghji/Call-Helper/releases/tag/v1.4.5)
+- [Latest Release (v1.4.6)](https://github.com/mpsinghji/Call-Helper/releases/tag/v1.4.6)
 - [All Releases](https://github.com/mpsinghji/Call-Helper/releases)
 
 ## Release History
 
 | Version | VersionCode | Release Date | Highlights | Download |
 |---------|-------------|--------------|------------|----------|
+| **v1.4.6** | 13 | 2026-11-20 | In-app update check resilience fix: rate limit fallback to web redirect, ETag caching, retry UX | [CallHelper-v1.4.6.apk](https://github.com/mpsinghji/Call-Helper/releases/download/v1.4.6/CallHelper-v1.4.6.apk) |
 | **v1.4.5** | 12 | 2026-11-20 | Renamed accessibility service label to "Caller Identification Service" (clean, non-branded system label) | [CallHelper-v1.4.5.apk](https://github.com/mpsinghji/Call-Helper/releases/download/v1.4.5/CallHelper-v1.4.5.apk) |
 | **v1.4.4** | 11 | 2026-11-20 | Added persistent "Check update" setting, full regression verification, production signed | [CallHelper-v1.4.4.apk](https://github.com/mpsinghji/Call-Helper/releases/download/v1.4.4/CallHelper-v1.4.4.apk) |
 | **v1.4.3** | 10 | 2026-11-15 | Permanent release keystore integration and secret-driven CI signing | [CallHelper-v1.4.3.apk](https://github.com/mpsinghji/Call-Helper/releases/download/v1.4.3/CallHelper-v1.4.3.apk) |

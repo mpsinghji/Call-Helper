@@ -130,6 +130,11 @@
     <string name="update_downloaded">Update %1$s downloaded</string>
     <string name="update_btn_install">Install</string>
     <string name="update_error">Unable to check for updates</string>
+    <string name="update_error_network">No internet connection</string>
+    <string name="update_error_timeout">Update check timed out</string>
+    <string name="update_error_rate_limited">Update server busy. Try again later.</string>
+    <string name="update_error_server">Server error checking for updates</string>
+    <string name="retry">Retry</string>
     <string name="dismiss">Dismiss</string>
     <string name="tools_section_update_title">App Updates</string>
     <string name="tools_section_update_desc">Check GitHub Releases for the latest version and updates.</string>
