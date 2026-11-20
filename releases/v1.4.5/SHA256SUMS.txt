@@ -1,0 +1,5 @@
+# SHA-256 Checksums for Call Handler v1.4.5
+# Format: <sha256>  <filename>
+# To verify: sha256sum -c SHA256SUMS.txt
+
+PENDING_CI_BUILD  CallHelper-v1.4.5.apk
